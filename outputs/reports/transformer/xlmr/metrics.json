@@ -1,0 +1,28 @@
+{
+  "model_name": "FacebookAI/xlm-roberta-base",
+  "target_col": "sentiment_std_3class",
+  "labels": [
+    "negative",
+    "neutral",
+    "positive"
+  ],
+  "max_length": 192,
+  "train_batch_size": 16,
+  "eval_batch_size": 32,
+  "num_epochs": 3,
+  "learning_rate": 2e-05,
+  "baseline_test_macro_f1": 0.811936,
+  "validation": {
+    "split": "validation",
+    "accuracy": 0.8666121112929623,
+    "macro_f1": 0.8639911477924865,
+    "weighted_f1": 0.8665495381616733
+  },
+  "test": {
+    "split": "test",
+    "accuracy": 0.8545863585233664,
+    "macro_f1": 0.8520639182987177,
+    "weighted_f1": 0.8546099997699863
+  },
+  "model_dir": "/content/drive/MyDrive/Student Voice Intelligence/outputs/models/transformer/xlmr_sentiment_20260619_193243/model"
+}
