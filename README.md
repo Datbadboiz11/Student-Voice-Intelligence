@@ -1,6 +1,6 @@
 # Student Voice Intelligence
 
-He thong NLP phan tich phan hoi sinh vien tieng Viet. Project hien tai tap trung vao pipeline data, EDA, label enrichment va baseline classification truoc khi chuyen sang Transformer/RAG.
+He thong NLP phan tich phan hoi sinh vien tieng Viet. Project hien tai da hoan thanh pipeline data, EDA, label enrichment, baseline classification va fine-tune Transformer cho sentiment/topic.
 
 ## Muc tieu
 
@@ -21,11 +21,16 @@ Da hoan thanh:
 - LLM review cho urgency candidates
 - Baseline models bang TF-IDF + Logistic Regression / Linear SVM
 - Notebook demo inference tren vai cau mau
+- Fine-tune Transformer cho `sentiment_std_3class`
+- So sanh 4 Transformer sentiment: XLM-R, PhoBERT-base-v2, ViDeBERTa, PhoBERT-large
+- Chot `vinai/phobert-base-v2` lam model sentiment chinh
+- Fine-tune Transformer cho `topic_group`
+- So sanh 3 bien the PhoBERT topic: full class weight, no weight, sqrt class weight
+- Chot `topic_phobertv2_noweight` lam model topic chinh
 
 Dang lam tiep:
 
-- Phase 4: Transformer single-task models
-- Phase 5+: multi-task learning, semantic search, RAG, dashboard
+- Phase 5+: toxic/urgency Transformer, multi-task learning, semantic search, RAG, dashboard
 
 ## Cau truc thu muc
 
@@ -42,6 +47,15 @@ Student Voice Intelligence/
 |   `-- baseline/
 |       |-- baseline_models.ipynb
 |       `-- 06_baseline_inference_demo.ipynb
+|   |
+|   `-- transformer/
+|       |-- train_xlmr_sentiment.ipynb
+|       |-- train_phobertv2_sentiment.ipynb
+|       |-- train_videberta_sentiment.ipynb
+|       |-- train_phobertlarge_sentiment.ipynb
+|       |-- train_phobertv2_topic.ipynb
+|       |-- train_phobertv2_topic_noweight.ipynb
+|       `-- train_phobertv2_topic_sqrt_weight.ipynb
 |
 |-- data/
 |   `-- processed/              # ignored by git
@@ -90,6 +104,18 @@ File nay gom:
 - `is_toxic`
 - `urgency_level_final`
 
+Khi train PhoBERT, notebook se tao hoac dung lai file cache:
+
+```text
+data/processed/student_voice_enriched_reviewed_phobert.csv
+```
+
+File cache nay co them cot:
+
+```text
+text_phobert
+```
+
 ## Thu tu chay notebook
 
 Chay theo thu tu:
@@ -101,6 +127,13 @@ notebook/data/label_enrichment.ipynb
 notebook/data/llm_review_urgency.ipynb
 notebook/baseline/baseline_models.ipynb
 notebook/baseline/06_baseline_inference_demo.ipynb
+notebook/transformer/train_xlmr_sentiment.ipynb
+notebook/transformer/train_phobertv2_sentiment.ipynb
+notebook/transformer/train_videberta_sentiment.ipynb
+notebook/transformer/train_phobertlarge_sentiment.ipynb
+notebook/transformer/train_phobertv2_topic.ipynb
+notebook/transformer/train_phobertv2_topic_noweight.ipynb
+notebook/transformer/train_phobertv2_topic_sqrt_weight.ipynb
 ```
 
 ## LLM API key
@@ -169,17 +202,106 @@ Luu y:
 - Toxic va urgency co label enrichment/rule/LLM, khong nen chi nhin accuracy.
 - Urgency `high` rat it, nen can than khi ket luan.
 
+## Transformer sentiment results
+
+Da fine-tune va danh gia 4 Transformer cho task:
+
+```text
+sentiment_std_3class
+```
+
+Ket qua test:
+
+| Rank | Model | Accuracy | Macro-F1 | Weighted-F1 | Ghi chu |
+|---:|---|---:|---:|---:|---|
+| 1 | `vinai/phobert-base-v2` | 0.860 | 0.858 | 0.860 | Model sentiment chinh |
+| 2 | `vinai/phobert-large` | 0.855 | 0.853 | 0.855 | Nang hon nhung khong tot hon base-v2 |
+| 3 | `FacebookAI/xlm-roberta-base` | 0.855 | 0.852 | 0.855 | Multilingual baseline tot |
+| 4 | `Fsoft-AIC/videberta-base` | 0.735 | 0.710 | 0.729 | Khong can uu tien tiep |
+| 5 | `TF-IDF + Linear SVM` | 0.819 | 0.812 | 0.819 | Baseline classic |
+
+Ket luan:
+
+```text
+vinai/phobert-base-v2
+```
+
+la model sentiment tot nhat hien tai, vua co macro-F1 cao nhat vua nhe hon PhoBERT-large.
+
+Bang tong hop sentiment:
+
+```text
+outputs/reports/transformer/sentiment_model_comparison.csv
+outputs/reports/transformer/sentiment_model_comparison.md
+```
+
+Model sentiment tot nhat duoc luu tren Drive tai:
+
+```text
+outputs/models/transformer/phobert_base_v2_sentiment_20260620_030200/model
+```
+
+## Transformer topic results
+
+Da fine-tune `topic_group` voi `vinai/phobert-base-v2` theo 3 bien the:
+
+| Rank | Model topic | Accuracy | Macro-F1 | Weighted-F1 | Ghi chu |
+|---:|---|---:|---:|---:|---|
+| 1 | `topic_phobertv2_noweight` | 0.848 | 0.722 | 0.846 | Model topic chinh |
+| 2 | `topic_phobertv2_sqrt_weight` | 0.839 | 0.722 | 0.841 | Gan bang no-weight, tot hon cho mot so lop nho |
+| 3 | `topic_phobertv2` full weight | 0.830 | 0.716 | 0.835 | Bi class weight keo manh, khong chon lam model chinh |
+| 4 | `TF-IDF + Linear SVM` | 0.815 | 0.658 | 0.816 | Baseline classic |
+
+Ket luan:
+
+```text
+topic_phobertv2_noweight
+```
+
+la model topic chinh hien tai vi co accuracy va weighted-F1 cao nhat, macro-F1 cung nhinh hon `sqrt_weight` mot chut. Ban `sqrt_weight` duoc giu lai nhu mot thuc nghiem tham khao neu muon uu tien them cac lop nho nhu `spam`.
+
+Notebook topic:
+
+```text
+notebook/transformer/train_phobertv2_topic.ipynb
+notebook/transformer/train_phobertv2_topic_noweight.ipynb
+notebook/transformer/train_phobertv2_topic_sqrt_weight.ipynb
+```
+
+Report topic:
+
+```text
+outputs/reports/transformer/topic_phobertv2/
+outputs/reports/transformer/topic_phobertv2_noweight/
+outputs/reports/transformer/topic_phobertv2_sqrt_weight/
+```
+
+Model topic chinh duoc luu tren Drive tai:
+
+```text
+outputs/models/transformer/phobert_base_v2_topic_20260621_101250/model
+```
+
 ## Reports
 
 Sau khi chay notebook, cac report nam o:
 
 ```text
-outputs/reports/data_merge_report.md
-outputs/reports/eda_report.md
-outputs/reports/label_enrichment_report.md
-outputs/reports/llm_urgency_review_report.md
-outputs/reports/baseline_report.md
-outputs/reports/baseline_results.csv
+outputs/reports/data/data_merge_report.md
+outputs/reports/data/eda_report.md
+outputs/reports/data/label_enrichment_report.md
+outputs/reports/data/llm_urgency_review_report.md
+outputs/reports/baseline/baseline_report.md
+outputs/reports/baseline/baseline_results.csv
+outputs/reports/transformer/sentiment_model_comparison.csv
+outputs/reports/transformer/sentiment_model_comparison.md
+outputs/reports/transformer/xlmr/
+outputs/reports/transformer/phobertv2/
+outputs/reports/transformer/phobert_large/
+outputs/reports/transformer/videberta/
+outputs/reports/transformer/topic_phobertv2/
+outputs/reports/transformer/topic_phobertv2_noweight/
+outputs/reports/transformer/topic_phobertv2_sqrt_weight/
 ```
 
 ## Baseline inference demo
@@ -225,4 +347,3 @@ Khong nen push:
 - model files
 - vector DB
 - generated figures neu khong can
-
