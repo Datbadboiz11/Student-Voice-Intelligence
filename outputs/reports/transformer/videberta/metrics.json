@@ -1,0 +1,33 @@
+{
+  "model_name": "Fsoft-AIC/videberta-base",
+  "target_col": "sentiment_std_3class",
+  "text_col_used": "text",
+  "labels": [
+    "negative",
+    "neutral",
+    "positive"
+  ],
+  "max_length": 192,
+  "train_batch_size": 8,
+  "eval_batch_size": 16,
+  "num_epochs": 3,
+  "learning_rate": 1e-05,
+  "warmup_steps": 775,
+  "baseline_test_macro_f1": 0.811936,
+  "xlmr_test_macro_f1": 0.852064,
+  "phobert_v2_test_macro_f1": 0.857618,
+  "validation": {
+    "split": "validation",
+    "accuracy": 0.7350654664484452,
+    "macro_f1": 0.7113541409005079,
+    "weighted_f1": 0.7296219007913022
+  },
+  "test": {
+    "split": "test",
+    "accuracy": 0.7351467430207588,
+    "macro_f1": 0.7097950336594421,
+    "weighted_f1": 0.7293181772170259
+  },
+  "model_dir": "/content/drive/MyDrive/Student Voice Intelligence/outputs/models/transformer/videberta_base_sentiment_20260620_080117/model",
+  "report_dir": "/content/drive/MyDrive/Student Voice Intelligence/outputs/reports/transformer/videberta"
+}
