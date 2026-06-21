@@ -1,0 +1,49 @@
+{
+  "model_name": "vinai/phobert-base-v2",
+  "target_col": "topic_group",
+  "text_col_used": "text_phobert",
+  "labels": [
+    "career_jobs",
+    "events_news",
+    "facilities",
+    "others",
+    "personal_social",
+    "spam",
+    "student_services",
+    "teaching_learning"
+  ],
+  "max_length": 192,
+  "train_batch_size": 16,
+  "eval_batch_size": 32,
+  "num_epochs": 3,
+  "learning_rate": 2e-05,
+  "warmup_steps": 387,
+  "use_class_weights": true,
+  "class_weights": {
+    "career_jobs": 7.640514184397163,
+    "events_news": 3.953440366972477,
+    "facilities": 8.670523138832998,
+    "others": 0.4050046992481203,
+    "personal_social": 2.7482461734693877,
+    "spam": 15.33540925266904,
+    "student_services": 2.0403645833333335,
+    "teaching_learning": 0.24315822141970433
+  },
+  "baseline_topic_test_accuracy": 0.815421,
+  "baseline_topic_test_macro_f1": 0.658308,
+  "validation": {
+    "split": "validation",
+    "accuracy": 0.830810147299509,
+    "macro_f1": 0.7202697509519858,
+    "weighted_f1": 0.8343009766263527
+  },
+  "test": {
+    "split": "test",
+    "accuracy": 0.8304530115553738,
+    "macro_f1": 0.7162620653960916,
+    "weighted_f1": 0.8347546900279111
+  },
+  "model_dir": "/content/drive/MyDrive/Student Voice Intelligence/outputs/models/transformer/phobert_base_v2_topic_20260621_092559/model",
+  "report_dir": "/content/drive/MyDrive/Student Voice Intelligence/outputs/reports/transformer/topic_phobertv2",
+  "phobert_cache_path": "/content/drive/MyDrive/Student Voice Intelligence/data/processed/student_voice_enriched_reviewed_phobert.csv"
+}

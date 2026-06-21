@@ -1,0 +1,60 @@
+{
+  "model_name": "vinai/phobert-base-v2",
+  "target_col": "topic_group",
+  "text_col_used": "text_phobert",
+  "labels": [
+    "career_jobs",
+    "events_news",
+    "facilities",
+    "others",
+    "personal_social",
+    "spam",
+    "student_services",
+    "teaching_learning"
+  ],
+  "max_length": 192,
+  "train_batch_size": 16,
+  "eval_batch_size": 32,
+  "num_epochs": 3,
+  "learning_rate": 2e-05,
+  "warmup_steps": 387,
+  "use_class_weights": true,
+  "class_weight_mode": "sqrt",
+  "raw_balanced_class_weights": {
+    "career_jobs": 7.640514184397163,
+    "events_news": 3.953440366972477,
+    "facilities": 8.670523138832998,
+    "others": 0.4050046992481203,
+    "personal_social": 2.7482461734693877,
+    "spam": 15.33540925266904,
+    "student_services": 2.0403645833333335,
+    "teaching_learning": 0.24315822141970433
+  },
+  "class_weights": {
+    "career_jobs": 2.7641480033451833,
+    "events_news": 1.9883260212984382,
+    "facilities": 2.944575205158292,
+    "others": 0.6363997951351967,
+    "personal_social": 1.6577835122444027,
+    "spam": 3.9160451035029,
+    "student_services": 1.428413309701829,
+    "teaching_learning": 0.49311075978901975
+  },
+  "baseline_topic_test_accuracy": 0.815421,
+  "baseline_topic_test_macro_f1": 0.658308,
+  "validation": {
+    "split": "validation",
+    "accuracy": 0.8445171849427169,
+    "macro_f1": 0.7351532574616566,
+    "weighted_f1": 0.8447456316565798
+  },
+  "test": {
+    "split": "test",
+    "accuracy": 0.8393496267512015,
+    "macro_f1": 0.7216283266798342,
+    "weighted_f1": 0.8406383832728045
+  },
+  "model_dir": "/content/drive/MyDrive/Student Voice Intelligence/outputs/models/transformer/phobert_base_v2_topic_20260621_165017/model",
+  "report_dir": "/content/drive/MyDrive/Student Voice Intelligence/outputs/reports/transformer/topic_phobertv2_sqrt_weight",
+  "phobert_cache_path": "/content/drive/MyDrive/Student Voice Intelligence/data/processed/student_voice_enriched_reviewed_phobert.csv"
+}

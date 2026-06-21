@@ -1,0 +1,39 @@
+{
+  "model_name": "vinai/phobert-base-v2",
+  "target_col": "topic_group",
+  "text_col_used": "text_phobert",
+  "labels": [
+    "career_jobs",
+    "events_news",
+    "facilities",
+    "others",
+    "personal_social",
+    "spam",
+    "student_services",
+    "teaching_learning"
+  ],
+  "max_length": 192,
+  "train_batch_size": 16,
+  "eval_batch_size": 32,
+  "num_epochs": 3,
+  "learning_rate": 2e-05,
+  "warmup_steps": 387,
+  "use_class_weights": false,
+  "baseline_topic_test_accuracy": 0.815421,
+  "baseline_topic_test_macro_f1": 0.658308,
+  "validation": {
+    "split": "validation",
+    "accuracy": 0.8516775777414075,
+    "macro_f1": 0.7361572113542414,
+    "weighted_f1": 0.8491766436464457
+  },
+  "test": {
+    "split": "test",
+    "accuracy": 0.8478372021679108,
+    "macro_f1": 0.721953208069398,
+    "weighted_f1": 0.8456984613316118
+  },
+  "model_dir": "/content/drive/MyDrive/Student Voice Intelligence/outputs/models/transformer/phobert_base_v2_topic_20260621_101250/model",
+  "report_dir": "/content/drive/MyDrive/Student Voice Intelligence/outputs/reports/transformer/topic_phobertv2_noweight",
+  "phobert_cache_path": "/content/drive/MyDrive/Student Voice Intelligence/data/processed/student_voice_enriched_reviewed_phobert.csv"
+}
