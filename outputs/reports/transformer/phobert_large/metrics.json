@@ -1,0 +1,37 @@
+{
+  "model_name": "vinai/phobert-large",
+  "target_col": "sentiment_std_3class",
+  "text_col_used": "text_phobert",
+  "labels": [
+    "negative",
+    "neutral",
+    "positive"
+  ],
+  "max_length": 192,
+  "train_batch_size": 4,
+  "eval_batch_size": 8,
+  "gradient_accumulation_steps": 2,
+  "effective_train_batch_size": 8,
+  "num_epochs": 3,
+  "learning_rate": 1e-05,
+  "warmup_steps": 775,
+  "baseline_test_macro_f1": 0.811936,
+  "xlmr_test_macro_f1": 0.852064,
+  "phobert_v2_test_macro_f1": 0.857618,
+  "videberta_test_macro_f1": 0.709795,
+  "validation": {
+    "split": "validation",
+    "accuracy": 0.8659983633387889,
+    "macro_f1": 0.8636121981796272,
+    "weighted_f1": 0.8659405602378283
+  },
+  "test": {
+    "split": "test",
+    "accuracy": 0.8550976582472646,
+    "macro_f1": 0.8526606199139682,
+    "weighted_f1": 0.8550853530102419
+  },
+  "model_dir": "/content/drive/MyDrive/Student Voice Intelligence/outputs/models/transformer/phobert_large_sentiment_20260620_105614/model",
+  "report_dir": "/content/drive/MyDrive/Student Voice Intelligence/outputs/reports/transformer/phobert_large",
+  "phobert_cache_path": "/content/drive/MyDrive/Student Voice Intelligence/data/processed/student_voice_enriched_reviewed_phobert.csv"
+}
