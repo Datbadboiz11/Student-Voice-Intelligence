@@ -1,0 +1,37 @@
+services:
+  qdrant:
+    image: qdrant/qdrant:latest
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    ports:
+      - "127.0.0.1:6333:6333"
+
+  api:
+    build: .
+    command: uvicorn api.app:app --host 0.0.0.0 --port 8000
+    environment:
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_COLLECTION: student_feedback
+      STUDENT_VOICE_PROJECT_DIR: /app
+      HF_HOME: /root/.cache/huggingface
+    volumes:
+      - ./outputs/models:/app/outputs/models:ro
+      - ./data/processed:/app/data/processed:ro
+      - ./outputs/hf_cache:/root/.cache/huggingface
+    ports:
+      - "8000:8000"
+    depends_on:
+      - qdrant
+
+  dashboard:
+    build: .
+    command: streamlit run dashboard/app.py --server.address 0.0.0.0 --server.port 8501
+    environment:
+      STUDENT_VOICE_API_URL: http://api:8000
+    ports:
+      - "8501:8501"
+    depends_on:
+      - api
+
+volumes:
+  qdrant_storage:
