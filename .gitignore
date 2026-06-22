@@ -32,7 +32,7 @@ Thumbs.db
 logs/
 
 # Local data files generated/downloaded by notebooks
-datasets/**/*.csv
+datasets/
 data/raw/
 data/external/
 data/processed/*.csv
@@ -50,3 +50,12 @@ outputs/vector_db/
 
 # Large/generated experiment artifacts
 outputs/figures/
+
+# Local notes and temporary assets
+note.txt
+image.png
+down_data.ipynb
+student_voice_predictions.csv
+
+# Streamlit local secrets
+.streamlit/secrets.toml

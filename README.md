@@ -1,6 +1,9 @@
 # Student Voice Intelligence
 
-He thong NLP phan tich phan hoi sinh vien tieng Viet. Project hien tai da hoan thanh pipeline data, EDA, label enrichment, baseline classification va fine-tune Transformer cho sentiment/topic.
+He thong NLP phan tich phan hoi sinh vien tieng Viet. Project ket hop data pipeline,
+PhoBERT, FastAPI va Streamlit de phan tich mot feedback hoac xu ly hang loat tu CSV.
+
+**Trang thai:** v2 da hoan thanh. Demo co the chay bang Docker API va Streamlit dashboard.
 
 ## Muc tieu
 
@@ -10,6 +13,43 @@ Project xu ly cac phan hoi dang text va du doan:
 - `topic`: nhom chu de phan hoi
 - `toxic`: co ngon ngu doc hai/xuc pham hay khong
 - `urgency`: muc do can xu ly low / medium / high
+
+## Demo v2
+
+```mermaid
+flowchart LR
+    U[Nguoi dung] --> D[Streamlit dashboard]
+    D --> A[FastAPI]
+    A --> M[PhoBERT sentiment/topic]
+    A --> B[Baseline toxic/urgency]
+    M --> R[Ket qua phan tich]
+    B --> R
+    R --> D
+```
+
+Dashboard ho tro:
+
+- Phan tich mot feedback va hien sentiment, topic, toxic, urgency.
+- Upload CSV co cot `text`, preview ket qua va tai CSV da du doan.
+- Kiem tra ket noi API/model ngay tren giao dien.
+
+## Quick start
+
+Can co Docker Desktop va model tai `outputs/models/`. Build va chay API:
+
+```powershell
+docker build -t student-voice-api:1.0.0 .
+docker run --rm -p 8000:8000 -v "${PWD}\outputs\models:/app/outputs/models:ro" student-voice-api:1.0.0
+```
+
+Mo terminal thu hai va chay dashboard:
+
+```powershell
+streamlit run dashboard/app.py
+```
+
+Truy cap dashboard tai `http://localhost:8501` va Swagger API tai
+`http://127.0.0.1:8000/docs`.
 
 ## Trang thai hien tai
 
@@ -27,10 +67,16 @@ Da hoan thanh:
 - Fine-tune Transformer cho `topic_group`
 - So sanh 3 bien the PhoBERT topic: full class weight, no weight, sqrt class weight
 - Chot `topic_phobertv2_noweight` lam model topic chinh
+- Notebook demo inference tong hop
+- FastAPI inference service cho demo end-to-end
+- Automated API tests bang pytest
+- Docker image cho FastAPI, mount model tu host
+- Batch prediction tu file CSV
+- Streamlit dashboard cho single feedback va CSV
 
 Dang lam tiep:
 
-- Phase 5+: toxic/urgency Transformer, multi-task learning, semantic search, RAG, dashboard
+- Phase 3: semantic search, RAG summary/report va dashboard analytics nang cao
 
 ## Cau truc thu muc
 
@@ -48,6 +94,9 @@ Student Voice Intelligence/
 |       |-- baseline_models.ipynb
 |       `-- 06_baseline_inference_demo.ipynb
 |   |
+|   |-- demo/
+|   |   `-- inference_student_voice.ipynb
+|   |
 |   `-- transformer/
 |       |-- train_xlmr_sentiment.ipynb
 |       |-- train_phobertv2_sentiment.ipynb
@@ -56,6 +105,20 @@ Student Voice Intelligence/
 |       |-- train_phobertv2_topic.ipynb
 |       |-- train_phobertv2_topic_noweight.ipynb
 |       `-- train_phobertv2_topic_sqrt_weight.ipynb
+|
+|-- src/
+|   |-- __init__.py
+|   `-- inference.py
+|
+|-- api/
+|   |-- __init__.py
+|   `-- app.py
+|
+|-- dashboard/
+|   `-- app.py                 # Streamlit UI, goi FastAPI
+|
+|-- tests/
+|   `-- test_api.py            # API contract tests
 |
 |-- data/
 |   `-- processed/              # ignored by git
@@ -68,8 +131,11 @@ Student Voice Intelligence/
 |
 |-- PLAN.md
 |-- note.txt
+|-- requirements.txt
 |-- .env.example
-`-- .gitignore
+|-- Dockerfile
+|-- .dockerignore
+`-- feedback.csv               # sample CSV cho /predict-csv
 ```
 
 ## Data
@@ -281,6 +347,189 @@ Model topic chinh duoc luu tren Drive tai:
 ```text
 outputs/models/transformer/phobert_base_v2_topic_20260621_101250/model
 ```
+
+## Inference notebook
+
+Dung notebook demo:
+
+```text
+notebook/demo/inference_student_voice.ipynb
+```
+
+Notebook nay load 2 model Transformer chinh:
+
+```text
+outputs/models/transformer/phobertv2_sentiment
+outputs/models/transformer/phobertv2_topic_noweight
+```
+
+Va load baseline toxic/urgency neu co:
+
+```text
+outputs/models/baseline/toxic_binary_tfidf_linear_svm.joblib
+outputs/models/baseline/urgency_final_tfidf_linear_svm.joblib
+```
+
+Output gom:
+
+- `sentiment`
+- `topic`
+- `toxic`
+- `urgency`
+- confidence cua sentiment/topic
+
+## FastAPI demo
+
+FastAPI dung chung logic voi notebook demo trong:
+
+```text
+src/inference.py
+```
+
+API app nam o:
+
+```text
+api/app.py
+```
+
+Cai dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+Chay API tu thu muc project:
+
+```bash
+uvicorn api.app:app --reload
+```
+
+Mo Swagger UI:
+
+```text
+http://127.0.0.1:8000/docs
+```
+
+Cac endpoint chinh:
+
+```text
+GET  /
+GET  /health
+GET  /model-info
+POST /predict
+POST /predict-batch
+POST /predict-csv
+```
+
+Vi du request `POST /predict`:
+
+```json
+{
+  "text": "Wifi phong hoc qua yeu, may chieu bi mo nen rat kho hoc."
+}
+```
+
+Vi du response:
+
+```json
+{
+  "text": "Wifi phong hoc qua yeu, may chieu bi mo nen rat kho hoc.",
+  "sentiment": "negative",
+  "sentiment_confidence": 0.9895,
+  "topic": "facilities",
+  "topic_confidence": 0.9709,
+  "toxic": 0,
+  "urgency": "medium"
+}
+```
+
+Luu y:
+
+- `/health` chi kiem tra file model co ton tai, khong load model.
+- `/model-info` va `/predict` se load model lan dau, co the mat vai chuc giay tren CPU.
+- Model files khong nen push len GitHub. Can dat model local dung cac duong dan tren truoc khi chay API.
+
+### Du doan tu CSV
+
+Endpoint `POST /predict-csv` nhan mot file CSV UTF-8 co cot bat buoc `text`, toi da
+5,000 dong. Response la file `student_voice_predictions.csv`, giu lai cac cot goc
+va them `sentiment`, `topic`, `toxic`, `urgency` cung confidence cua sentiment/topic.
+
+Vi du dung `curl`:
+
+```bash
+curl -X POST http://127.0.0.1:8000/predict-csv -F "file=@feedback.csv" -o student_voice_predictions.csv
+```
+
+Vi du `feedback.csv`:
+
+```csv
+student_id,text
+sv-01,Wifi phong hoc qua yeu.
+sv-02,Giang vien day de hieu va nhiet tinh.
+```
+
+## Docker
+
+Can cai va mo Docker Desktop truoc khi chay. Docker image dung PyTorch CPU-only,
+chi chua code va dependencies; model duoc mount tu may host de khong dua model
+nhẹ len Git.
+
+Build image tu thu muc project:
+
+```bash
+docker build -t student-voice-api:1.0.0 .
+```
+
+Chay container tren PowerShell va mount model theo che do chi doc:
+
+```powershell
+docker run --rm -p 8000:8000 `
+  -v "${PWD}\outputs\models:/app/outputs/models:ro" `
+  student-voice-api:1.0.0
+```
+
+Kiem tra API tu mot cua so PowerShell khac:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8000/health
+```
+
+Sau do mo Swagger UI tai:
+
+```text
+http://127.0.0.1:8000/docs
+```
+
+Luu y: thu muc `outputs/models` tren may host phai co cac model voi dung ten
+duong dan da mo ta o phan Inference notebook.
+
+## Streamlit dashboard
+
+Dashboard goi FastAPI, khong tu load model. Hay chay API truoc (local hoac Docker),
+sau do mo mot terminal khac tai thu muc project:
+
+```bash
+streamlit run dashboard/app.py
+```
+
+Mac dinh dashboard ket noi toi `http://127.0.0.1:8000`. Co the doi API URL o
+sidebar hoac dat bien moi truong `STUDENT_VOICE_API_URL` truoc khi chay.
+
+Dashboard ho tro:
+
+- Phan tich mot feedback va hien sentiment/topic/toxic/urgency.
+- Upload CSV, preview bang ket qua va tai CSV da du doan.
+
+## Kiem thu
+
+Chay API contract tests ma khong can load PhoBERT/model that:
+
+```bash
+python -m pytest -q
+```
+
+Test bao phu endpoint health, single prediction, batch JSON va upload CSV.
 
 ## Reports
 
