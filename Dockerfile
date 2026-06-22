@@ -16,6 +16,8 @@ RUN pip install --no-cache-dir --upgrade pip \
 COPY README.md ./README.md
 COPY api ./api
 COPY src ./src
+COPY dashboard ./dashboard
+COPY scripts ./scripts
 
 EXPOSE 8000
 

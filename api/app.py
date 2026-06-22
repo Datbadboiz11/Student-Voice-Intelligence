@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from src.inference import InferenceConfig, get_inference_service
+from src.retrieval import get_retrieval_service
 
 MAX_CSV_ROWS = 5_000
 
@@ -20,6 +21,15 @@ class PredictRequest(BaseModel):
 
 class BatchPredictRequest(BaseModel):
     texts: list[str] = Field(..., min_length=1, description="List of student feedback texts.")
+
+
+class SearchRequest(BaseModel):
+    query: str = Field(..., min_length=1, description="Semantic search query.")
+    top_k: int = Field(default=5, ge=1, le=20, description="Number of reranked feedbacks.")
+    topic: str | None = Field(default=None, description="Optional topic filter.")
+    sentiment: str | None = Field(default=None, description="Optional sentiment filter.")
+    urgency: str | None = Field(default=None, description="Optional urgency filter.")
+    toxic: int | None = Field(default=None, ge=0, le=1, description="Optional toxic filter.")
 
 
 app = FastAPI(
@@ -149,3 +159,32 @@ async def predict_csv(file: UploadFile = File(...)) -> StreamingResponse:
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": "attachment; filename=student_voice_predictions.csv"},
     )
+
+
+@app.get("/search-health")
+def search_health() -> dict[str, Any]:
+    return get_retrieval_service().health()
+
+
+@app.post("/search")
+def search(request: SearchRequest) -> dict[str, Any]:
+    try:
+        results = get_retrieval_service().search(
+            query=request.query,
+            top_k=request.top_k,
+            topic=request.topic,
+            sentiment=request.sentiment,
+            urgency=request.urgency,
+            toxic=request.toxic,
+        )
+        return {
+            "query": request.query,
+            "top_k": request.top_k,
+            "results": results,
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (FileNotFoundError, ConnectionError) as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc

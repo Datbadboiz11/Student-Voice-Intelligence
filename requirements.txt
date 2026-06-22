@@ -11,3 +11,5 @@ python-multipart
 streamlit
 pytest
 httpx
+sentence-transformers
+qdrant-client

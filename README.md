@@ -32,6 +32,7 @@ Dashboard ho tro:
 - Phan tich mot feedback va hien sentiment, topic, toxic, urgency.
 - Upload CSV co cot `text`, preview ket qua va tai CSV da du doan.
 - Kiem tra ket noi API/model ngay tren giao dien.
+- Tim feedback gan nghia qua Qdrant vector database.
 
 ## Quick start
 
@@ -117,6 +118,9 @@ Student Voice Intelligence/
 |-- dashboard/
 |   `-- app.py                 # Streamlit UI, goi FastAPI
 |
+|-- scripts/
+|   `-- build_vector_index.py  # Tao embedding va upsert vao Qdrant
+|
 |-- tests/
 |   `-- test_api.py            # API contract tests
 |
@@ -135,6 +139,7 @@ Student Voice Intelligence/
 |-- .env.example
 |-- Dockerfile
 |-- .dockerignore
+|-- docker-compose.yml
 `-- feedback.csv               # sample CSV cho /predict-csv
 ```
 
@@ -520,6 +525,47 @@ Dashboard ho tro:
 
 - Phan tich mot feedback va hien sentiment/topic/toxic/urgency.
 - Upload CSV, preview bang ket qua va tai CSV da du doan.
+- Tim semantic feedback tuong tu sau khi Qdrant index da duoc tao.
+
+## Semantic search voi Qdrant
+
+Qdrant chay local trong Docker, luu vector embedding va metadata cua feedback.
+`qdrant_storage` la Docker volume nen index van con sau khi restart container.
+
+Khoi dong full stack:
+
+```bash
+docker compose up --build -d qdrant api dashboard
+```
+
+Tao index tu data da xu ly. Lenh nay chi can chay lai khi corpus thay doi:
+
+```bash
+docker compose run --rm api python -m scripts.build_vector_index --recreate
+```
+
+Kiem tra index:
+
+```text
+GET http://127.0.0.1:8000/search-health
+```
+
+Search qua API:
+
+```json
+POST /search
+{
+  "query": "wifi phong hoc qua yeu",
+  "top_k": 5,
+  "topic": "facilities"
+}
+```
+
+`topic`, `sentiment`, `urgency` va `toxic` la filter tuy chon. Qdrant lay 20
+ung vien theo cosine similarity, sau do cross-encoder
+`cross-encoder/mmarco-mMiniLMv2-L12-H384-v1` rerank va tra `top_k` ket qua.
+Response co `vector_score` va `rerank_score`. Qdrant chi bind cong 6333 vao
+localhost; khong expose cong nay khi deploy public.
 
 ## Kiem thu
 

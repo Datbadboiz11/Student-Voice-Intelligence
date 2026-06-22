@@ -50,9 +50,32 @@ class FakeInferenceConfig:
         )
 
 
+class FakeRetrievalService:
+    def health(self):
+        return {"status": "ready", "collection": "student_feedback", "points_count": 2}
+
+    def search(self, query: str, top_k: int = 5, **_filters):
+        if not query.strip():
+            raise ValueError("Query must not be empty.")
+        return [
+            {
+                "id": "feedback-1",
+                "vector_score": 0.93,
+                "rerank_score": 4.12,
+                "text": "Wifi phong hoc qua yeu.",
+                "source_dataset": "UIT_VSFC",
+                "sentiment": "negative",
+                "topic": "facilities",
+                "toxic": 0,
+                "urgency": "medium",
+            }
+        ][:top_k]
+
+
 def make_client(monkeypatch) -> TestClient:
     monkeypatch.setattr(api_app, "InferenceConfig", FakeInferenceConfig)
     monkeypatch.setattr(api_app, "get_inference_service", lambda: FakeInferenceService())
+    monkeypatch.setattr(api_app, "get_retrieval_service", lambda: FakeRetrievalService())
     return TestClient(api_app.app)
 
 
@@ -165,3 +188,26 @@ def test_predict_csv_rejects_file_without_rows(monkeypatch):
 
     assert response.status_code == 400
     assert response.json()["detail"] == "CSV must contain at least one row."
+
+
+def test_search_returns_similar_feedback(monkeypatch):
+    response = make_client(monkeypatch).post(
+        "/search",
+        json={"query": "wifi phong hoc yeu", "top_k": 5, "topic": "facilities"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["query"] == "wifi phong hoc yeu"
+    assert body["results"][0]["topic"] == "facilities"
+    assert body["results"][0]["vector_score"] == 0.93
+    assert body["results"][0]["rerank_score"] == 4.12
+
+
+def test_search_rejects_invalid_top_k(monkeypatch):
+    response = make_client(monkeypatch).post(
+        "/search",
+        json={"query": "wifi", "top_k": 0},
+    )
+
+    assert response.status_code == 422
