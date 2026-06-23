@@ -52,6 +52,7 @@ data/processed/*.csv
 outputs/models/
 outputs/vector_db/
 outputs/hf_cache/
+outputs/app_state/
 qdrant_storage/
 .qdrant/
 *.joblib
@@ -64,6 +65,7 @@ qdrant_storage/
 
 # Large/generated experiment artifacts
 outputs/figures/
+outputs/reports/rag_evaluation.csv
 
 # Local notes and temporary assets
 note.txt
@@ -73,3 +75,8 @@ student_voice_predictions.csv
 
 # Streamlit local secrets
 .streamlit/secrets.toml
+
+# Docker Compose and local runtime files
+.tmp-compose-*
+*.sqlite
+*.sqlite3

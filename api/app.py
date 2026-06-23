@@ -12,7 +12,10 @@ from pydantic import BaseModel, Field
 from src.inference import InferenceConfig, get_inference_service
 from src.analytics import get_analytics_service
 from src.rag import RAGConfigurationError, RAGGenerationError, get_rag_service
+from src.reporting import get_report_service
 from src.retrieval import get_retrieval_service
+from src.reviews import get_review_service
+from src.topic_discovery import get_topic_discovery_service
 
 MAX_CSV_ROWS = 5_000
 
@@ -41,6 +44,31 @@ class AskRequest(BaseModel):
     sentiment: str | None = Field(default=None, description="Optional sentiment filter.")
     urgency: str | None = Field(default=None, description="Optional urgency filter.")
     toxic: int | None = Field(default=None, ge=0, le=1, description="Optional toxic filter.")
+
+
+class ReviewUpdateRequest(BaseModel):
+    urgency_final: str = Field(..., pattern="^(low|medium|high)$")
+    reviewer: str = Field(default="admin", max_length=80)
+    note: str = Field(default="", max_length=500)
+
+
+class ReportRequest(BaseModel):
+    title: str | None = Field(default=None, max_length=160)
+    dataset: str | None = None
+    topic: str | None = None
+    sentiment: str | None = None
+    urgency: str | None = None
+    toxic: int | None = Field(default=None, ge=0, le=1)
+
+
+class DiscoveryRequest(BaseModel):
+    topic: str | None = Field(default="others")
+    max_items: int = Field(default=1200, ge=50, le=3000)
+    min_cluster_size: int = Field(default=6, ge=3, le=50)
+
+
+class ClusterApprovalRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
 
 
 app = FastAPI(
@@ -240,3 +268,109 @@ def ask(request: AskRequest) -> dict[str, Any]:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/reviews")
+def list_reviews(
+    state: str = Query(default="pending", pattern="^(pending|reviewed|all)$"),
+    urgency: str | None = Query(default=None, pattern="^(low|medium|high)$"),
+    limit: int = Query(default=30, ge=1, le=100),
+) -> dict[str, Any]:
+    try:
+        return get_review_service().list_feedback(state=state, urgency=urgency, limit=limit)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/reviews/{feedback_id}")
+def update_review(feedback_id: str, request: ReviewUpdateRequest) -> dict[str, Any]:
+    try:
+        return get_review_service().save_review(
+            feedback_id=feedback_id,
+            urgency_final=request.urgency_final,
+            reviewer=request.reviewer,
+            note=request.note,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/reports/generate")
+def generate_report(request: ReportRequest) -> dict[str, Any]:
+    try:
+        return get_report_service().generate(
+            title=request.title,
+            dataset=request.dataset,
+            topic=request.topic,
+            sentiment=request.sentiment,
+            urgency=request.urgency,
+            toxic=request.toxic,
+        )
+    except (FileNotFoundError, ConnectionError) as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/reports")
+def list_reports(limit: int = Query(default=20, ge=1, le=100)) -> dict[str, Any]:
+    return {"items": get_report_service().list_reports(limit)}
+
+
+@app.get("/reports/{report_id}")
+def get_report(report_id: int) -> dict[str, Any]:
+    report = get_report_service().get_report(report_id)
+    if report is None:
+        raise HTTPException(status_code=404, detail="Report not found.")
+    return report
+
+
+@app.post("/topic-discovery/run")
+def run_topic_discovery(request: DiscoveryRequest) -> dict[str, Any]:
+    try:
+        return get_topic_discovery_service().run(
+            topic=request.topic,
+            max_items=request.max_items,
+            min_cluster_size=request.min_cluster_size,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/topic-discovery/clusters")
+def list_topic_clusters(
+    status: str | None = Query(default=None, pattern="^(pending|approved|rejected)$"),
+    limit: int = Query(default=50, ge=1, le=100),
+) -> dict[str, Any]:
+    return {"items": get_topic_discovery_service().list_clusters(status=status, limit=limit)}
+
+
+@app.post("/topic-discovery/clusters/{cluster_id}/approve")
+def approve_topic_cluster(cluster_id: int, request: ClusterApprovalRequest) -> dict[str, Any]:
+    try:
+        cluster = get_topic_discovery_service().approve_cluster(cluster_id, request.name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if cluster is None:
+        raise HTTPException(status_code=404, detail="Topic cluster not found.")
+    return cluster
+
+
+@app.post("/topic-discovery/clusters/{cluster_id}/reject")
+def reject_topic_cluster(cluster_id: int) -> dict[str, Any]:
+    cluster = get_topic_discovery_service().reject_cluster(cluster_id)
+    if cluster is None:
+        raise HTTPException(status_code=404, detail="Topic cluster not found.")
+    return cluster

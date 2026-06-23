@@ -22,6 +22,7 @@ import {
   Wifi
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { ReportWorkbench, ReviewWorkbench, TopicDiscoveryWorkbench } from "./v3-workbench";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
@@ -64,7 +65,7 @@ type Prediction = {
   toxic: number;
   urgency: string;
 };
-type View = "overview" | "analytics" | "predict" | "csv" | "search" | "rag";
+type View = "overview" | "analytics" | "predict" | "csv" | "search" | "rag" | "review" | "reports" | "discovery";
 
 const TOPICS = ["facilities", "teaching_learning", "student_services", "career_jobs", "events_news", "personal_social", "spam", "others"];
 const SENTIMENTS = ["negative", "neutral", "positive"];
@@ -129,7 +130,10 @@ export function Dashboard() {
     { id: "predict", label: "Dự đoán feedback", icon: Sparkles },
     { id: "csv", label: "Phân tích CSV", icon: FileUp },
     { id: "search", label: "Semantic Search", icon: Search },
-    { id: "rag", label: "RAG Chatbot", icon: Bot }
+    { id: "rag", label: "RAG Chatbot", icon: Bot },
+    { id: "review", label: "Duyệt urgency", icon: CheckCircle2 },
+    { id: "reports", label: "Báo cáo", icon: MessageSquareText },
+    { id: "discovery", label: "Khám phá chủ đề", icon: Activity }
   ];
 
   return (
@@ -185,6 +189,9 @@ export function Dashboard() {
           {view === "csv" && <CsvView />}
           {view === "search" && <SearchView />}
           {view === "rag" && <RagView />}
+          {view === "review" && <ReviewWorkbench />}
+          {view === "reports" && <ReportWorkbench />}
+          {view === "discovery" && <TopicDiscoveryWorkbench />}
         </div>
       </section>
     </main>

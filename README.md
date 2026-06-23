@@ -1,9 +1,9 @@
 # Student Voice Intelligence
 
-He thong NLP phan tich phan hoi sinh vien tieng Viet. Project ket hop data pipeline,
-PhoBERT, FastAPI va Streamlit de phan tich mot feedback hoac xu ly hang loat tu CSV.
+Hệ thống NLP phân tích phản hồi sinh viên tiếng Việt. Project kết hợp data pipeline,
+PhoBERT, FastAPI, Qdrant và Next.js để phân tích feedback, truy xuất ngữ nghĩa và tổng hợp có dẫn chứng.
 
-**Trạng thái:** v2.1 + Phase 8 RAG đã sẵn sàng để demo bằng Docker API và Next.js dashboard. V3 chưa hoàn tất.
+**Trạng thái:** v3.0.0 đã hoàn thành và được kiểm thử local: 25 pytest cases pass, bộ đánh giá RAG 8/8 case pass.
 
 ## Muc tieu
 
@@ -14,20 +14,22 @@ Project xu ly cac phan hoi dang text va du doan:
 - `toxic`: co ngon ngu doc hai/xuc pham hay khong
 - `urgency`: muc do can xu ly low / medium / high
 
-## Demo v2
+## Tổng quan v3
 
 ```mermaid
 flowchart LR
-    U[Nguoi dung] --> D[Next.js dashboard]
+    U[Người dùng] --> D[Next.js dashboard]
     D --> A[FastAPI]
     A --> M[PhoBERT sentiment/topic]
     A --> B[Baseline toxic/urgency]
-    M --> R[Ket qua phan tich]
+    A --> Q[Qdrant semantic search + rerank]
+    Q --> G[RAG Gemini/OpenAI]
+    M --> R[Kết quả phân tích]
     B --> R
     R --> D
 ```
 
-Dashboard ho tro:
+Dashboard chính tại Next.js hỗ trợ:
 
 - Overview voi metric tong feedback, sentiment, urgency va toxic.
 - Data analytics voi filter, negative feedback theo topic, urgency theo topic va sentiment x topic.
@@ -35,21 +37,25 @@ Dashboard ho tro:
 - Upload CSV co cot `text`, preview ket qua va tai CSV da du doan.
 - Kiem tra ket noi API/model ngay tren giao dien.
 - Tim feedback gan nghia qua Qdrant vector database.
-- Hoi dap dua tren feedback da truy xuat, co citation va evidence goc qua Gemini RAG.
+- Hỏi đáp RAG dựa trên feedback đã truy xuất, có citation và evidence gốc qua Gemini hoặc OpenAI.
+- Duyệt thủ công mức độ urgency; giá trị đã duyệt được lưu riêng, không sửa CSV gốc.
+- Tạo và lưu báo cáo Markdown từ analytics cùng feedback đại diện đã rerank.
+- Khám phá cụm chủ đề mới từ feedback và duyệt hoặc loại bỏ từng cụm.
 
 ## Quick start
 
-Can co Docker Desktop va model tai `outputs/models/`. Khoi dong full stack:
+Cần có Docker Desktop, dữ liệu đã xử lý tại `data/processed/` và model tại `outputs/models/`.
+Khởi động stack chính:
 
 ```bash
-docker compose up --build -d qdrant api dashboard
+docker compose up --build -d --force-recreate api dashboard
 ```
 
 Truy cap Next.js dashboard tai `http://localhost:8501` va Swagger API tai
 `http://127.0.0.1:8000/docs`. Streamlit cu van duoc giu de doi chieu tai
 `http://localhost:8502`.
 
-## Trang thai hien tai
+## Trạng thái hiện tại
 
 Da hoan thanh:
 
@@ -72,11 +78,11 @@ Da hoan thanh:
 - Batch prediction tu file CSV
 - Next.js + Tailwind dashboard cho overview, analytics, prediction, CSV, semantic search va RAG
 - Semantic search Qdrant voi Vietnamese SBERT va CrossEncoder reranking
-- Grounded RAG chatbot voi Gemini: tra loi kem feedback lam bang chung va tu choi khi khong du du lieu
-
-Dang lam tiep:
-
-- Cac hang muc v3 con lai: topic discovery, report generation, dashboard analytics nang cao va hoan thien manual review urgency
+- Grounded RAG chatbot với Gemini hoặc OpenAI: trả lời kèm feedback làm bằng chứng và từ chối khi không đủ dữ liệu
+- Manual review urgency lưu SQLite và được analytics/report sử dụng
+- Report generation có số liệu, evidence và lịch sử report
+- Topic discovery với TF-IDF + MiniBatchKMeans, có bước người dùng duyệt cụm
+- Bộ đánh giá RAG gồm 8 case, hỗ trợ filter theo topic/sentiment/urgency/toxic
 
 ## Cau truc thu muc
 
@@ -107,8 +113,15 @@ Student Voice Intelligence/
 |       `-- train_phobertv2_topic_sqrt_weight.ipynb
 |
 |-- src/
-|   |-- __init__.py
-|   `-- inference.py
+|   |-- inference.py
+|   |-- retrieval.py            # Qdrant retrieval + CrossEncoder rerank
+|   |-- reranker.py
+|   |-- rag.py                  # Gemini/OpenAI grounded generation
+|   |-- analytics.py
+|   |-- storage.py              # SQLite state store
+|   |-- reviews.py              # manual urgency review
+|   |-- reporting.py
+|   `-- topic_discovery.py
 |
 |-- api/
 |   |-- __init__.py
@@ -117,20 +130,29 @@ Student Voice Intelligence/
 |-- dashboard/
 |   `-- app.py                 # Streamlit UI, goi FastAPI
 |
+|-- web/                       # Next.js + Tailwind dashboard chinh
+|   |-- app/
+|   `-- components/
+|
 |-- scripts/
-|   `-- build_vector_index.py  # Tao embedding va upsert vao Qdrant
+|   |-- build_vector_index.py  # Tao embedding va upsert vao Qdrant
+|   `-- evaluate_rag.py        # Chay bo danh gia RAG
 |
 |-- tests/
-|   `-- test_api.py            # API contract tests
+|   |-- test_api.py            # API contract tests
+|   |-- test_retrieval.py
+|   `-- test_v3_features.py
 |
 |-- data/
+|   |-- evaluation/rag_test_cases.csv
 |   `-- processed/              # ignored by git
 |
 |-- datasets/                   # ignored by git
 |-- outputs/
 |   |-- reports/                # report ket qua
 |   |-- figures/                # ignored by git
-|   `-- models/                 # ignored by git
+|   |-- models/                 # ignored by git
+|   `-- app_state/              # SQLite local state, ignored by git
 |
 |-- PLAN.md
 |-- note.txt
@@ -632,15 +654,19 @@ Response gồm `answer`, `evidence`, `retrieved_count` và `grounded`. `evidence
 luôn giữ feedback gốc, metadata và `rerank_score` để kiểm tra các citation trong
 câu trả lời. Với câu hỏi ngoài phạm vi dữ liệu, chatbot không được bịa thông tin.
 
-## Kiem thu
+## Kiểm thử
 
-Chay API contract tests ma khong can load PhoBERT/model that:
+Chạy toàn bộ test trên Windows. Dùng thư mục tạm trong profile người dùng để tránh lỗi quyền
+ở `C:\Users\...\Temp\pytest-of-...`:
 
-```bash
-python -m pytest -q
+```powershell
+$pytestRoot = Join-Path $HOME "student-voice-pytest"
+New-Item -ItemType Directory -Force $pytestRoot | Out-Null
+$pytestTemp = Join-Path $pytestRoot ("run-" + [guid]::NewGuid().ToString("N"))
+python -m pytest -q -p no:cacheprovider --basetemp="$pytestTemp"
 ```
 
-Test bao phu endpoint health, single prediction, batch JSON va upload CSV.
+Kết quả tại thời điểm phát hành v3: `25 passed`.
 
 ## Reports
 
@@ -699,7 +725,7 @@ Nen push:
 - `.env.example`
 - `README.md`
 
-Khong nen push:
+Không nên push:
 
 - `.env`
 - dataset CSV
@@ -707,3 +733,42 @@ Khong nen push:
 - model files
 - vector DB
 - generated figures neu khong can
+- `outputs/app_state/` và mọi file SQLite tạo khi review/report/discovery
+- `outputs/reports/rag_evaluation.csv` vì đây là kết quả chạy local
+- `.pytest-*`, `web/.next/`, `web/node_modules/`
+
+## V3: vận hành và đánh giá
+
+Các chức năng vận hành của v3 dùng SQLite tại `outputs/app_state/student_voice.db`.
+File này là dữ liệu cục bộ, đã được bỏ qua bởi Git và không làm thay đổi CSV đã xử lý.
+
+- **Duyệt urgency**: mở dashboard, chọn `Duyệt urgency`, xác nhận `high`, `medium` hoặc `low`.
+  Analytics và report sẽ dùng giá trị đã duyệt ở lần tải kế tiếp.
+- **Báo cáo tự động**: trang `Báo cáo` tạo Markdown từ số liệu analytics và feedback đại diện
+  đã qua rerank. Report được lưu trong SQLite, không phụ thuộc API LLM.
+- **Khám phá chủ đề**: trang `Khám phá chủ đề` chạy TF-IDF + MiniBatchKMeans trên feedback của
+  một topic (mặc định `others`). Mỗi cụm cần được người dùng duyệt hoặc loại bỏ; topic gốc không
+  tự bị ghi đè.
+
+Các API tương ứng:
+
+```text
+GET  /reviews?state=pending&urgency=high
+POST /reviews/{feedback_id}
+POST /reports/generate
+GET  /reports
+POST /topic-discovery/run
+GET  /topic-discovery/clusters
+POST /topic-discovery/clusters/{cluster_id}/approve
+POST /topic-discovery/clusters/{cluster_id}/reject
+```
+
+Đánh giá RAG bằng bộ câu hỏi có sẵn:
+
+```powershell
+python scripts/evaluate_rag.py
+```
+
+Script gọi API `/ask` và ghi kết quả vào `outputs/reports/rag_evaluation.csv`. Các cột
+`behavior_correct`, `topic_correct` và `keyword_score` là kiểm tra tự động; cần đọc lại câu trả
+lời và evidence để đánh giá chất lượng cuối cùng.

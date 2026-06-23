@@ -9,6 +9,7 @@ from typing import Any
 import pandas as pd
 
 from src.inference import find_project_dir
+from src.storage import AppStorage, StorageConfig
 
 
 ANALYTICS_COLUMNS = {
@@ -47,8 +48,13 @@ def _records(frame: pd.DataFrame, columns: list[str]) -> list[dict[str, Any]]:
 
 
 class AnalyticsService:
-    def __init__(self, config: AnalyticsConfig | None = None) -> None:
+    def __init__(
+        self,
+        config: AnalyticsConfig | None = None,
+        storage: AppStorage | None = None,
+    ) -> None:
         self.config = config or AnalyticsConfig.from_project()
+        self.storage = storage or AppStorage(StorageConfig.from_project(self.config.project_dir))
         self._frame: pd.DataFrame | None = None
 
     def _get_frame(self) -> pd.DataFrame:
@@ -56,8 +62,14 @@ class AnalyticsService:
             if not self.config.data_path.exists():
                 raise FileNotFoundError(f"Analytics data not found: {self.config.data_path}")
 
-            frame = pd.read_csv(self.config.data_path, usecols=list(ANALYTICS_COLUMNS))
+            headers = pd.read_csv(self.config.data_path, nrows=0).columns
+            source_columns = [column for column in ANALYTICS_COLUMNS if column in headers]
+            frame = pd.read_csv(self.config.data_path, usecols=source_columns)
             frame = frame.rename(columns=ANALYTICS_COLUMNS)
+            if "row_id" in headers:
+                frame["row_id"] = pd.read_csv(self.config.data_path, usecols=["row_id"])["row_id"].astype(str)
+            else:
+                frame["row_id"] = frame.index.astype(str)
             for column in ("dataset", "sentiment", "topic", "urgency"):
                 frame[column] = frame[column].fillna("unknown").astype(str)
             frame["toxic"] = pd.to_numeric(frame["toxic"], errors="coerce").fillna(0).astype(int)
@@ -86,7 +98,13 @@ class AnalyticsService:
         urgency: str | None = None,
         toxic: int | None = None,
     ) -> dict[str, Any]:
-        source = self._get_frame()
+        source = self._get_frame().copy()
+        reviews = self.storage.review_map()
+        if reviews:
+            source["urgency"] = source.apply(
+                lambda row: reviews.get(str(row["row_id"]), {}).get("urgency_final", row["urgency"]),
+                axis=1,
+            )
         frame = source
         for column, value in {
             "dataset": dataset,
@@ -102,6 +120,7 @@ class AnalyticsService:
         return {
             "total_feedback": int(len(source)),
             "filtered_feedback": int(len(frame)),
+            "reviewed_feedback": int(source["row_id"].astype(str).isin(reviews).sum()),
             "source_distribution": self._distribution(frame, "dataset"),
             "sentiment_distribution": self._distribution(frame, "sentiment"),
             "topic_distribution": self._distribution(frame, "topic"),

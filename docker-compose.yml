@@ -24,6 +24,7 @@ services:
       - ./outputs/models:/app/outputs/models:ro
       - ./data/processed:/app/data/processed:ro
       - ./outputs/hf_cache:/root/.cache/huggingface
+      - ./outputs/app_state:/app/outputs/app_state
     ports:
       - "8000:8000"
     depends_on:
