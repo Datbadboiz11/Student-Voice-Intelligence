@@ -4,12 +4,14 @@ from io import BytesIO
 from typing import Any
 
 import pandas as pd
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from src.inference import InferenceConfig, get_inference_service
+from src.analytics import get_analytics_service
+from src.rag import RAGConfigurationError, RAGGenerationError, get_rag_service
 from src.retrieval import get_retrieval_service
 
 MAX_CSV_ROWS = 5_000
@@ -26,6 +28,15 @@ class BatchPredictRequest(BaseModel):
 class SearchRequest(BaseModel):
     query: str = Field(..., min_length=1, description="Semantic search query.")
     top_k: int = Field(default=5, ge=1, le=20, description="Number of reranked feedbacks.")
+    topic: str | None = Field(default=None, description="Optional topic filter.")
+    sentiment: str | None = Field(default=None, description="Optional sentiment filter.")
+    urgency: str | None = Field(default=None, description="Optional urgency filter.")
+    toxic: int | None = Field(default=None, ge=0, le=1, description="Optional toxic filter.")
+
+
+class AskRequest(BaseModel):
+    question: str = Field(..., min_length=1, description="Grounded question about student feedback.")
+    top_k: int = Field(default=6, ge=1, le=10, description="Number of feedbacks used as evidence.")
     topic: str | None = Field(default=None, description="Optional topic filter.")
     sentiment: str | None = Field(default=None, description="Optional sentiment filter.")
     urgency: str | None = Field(default=None, description="Optional urgency filter.")
@@ -67,6 +78,28 @@ def health() -> dict[str, Any]:
         "urgency_baseline_exists": config.urgency_baseline_path.exists(),
         "project_dir": str(config.project_dir),
     }
+
+
+@app.get("/analytics")
+def analytics(
+    dataset: str | None = None,
+    topic: str | None = None,
+    sentiment: str | None = None,
+    urgency: str | None = None,
+    toxic: int | None = Query(default=None, ge=0, le=1),
+) -> dict[str, Any]:
+    try:
+        return get_analytics_service().get_analytics(
+            dataset=dataset,
+            topic=topic,
+            sentiment=sentiment,
+            urgency=urgency,
+            toxic=toxic,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @app.get("/model-info")
@@ -185,6 +218,25 @@ def search(request: SearchRequest) -> dict[str, Any]:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except (FileNotFoundError, ConnectionError) as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/ask")
+def ask(request: AskRequest) -> dict[str, Any]:
+    try:
+        return get_rag_service().ask(
+            question=request.question,
+            top_k=request.top_k,
+            topic=request.topic,
+            sentiment=request.sentiment,
+            urgency=request.urgency,
+            toxic=request.toxic,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (RAGConfigurationError, RAGGenerationError, FileNotFoundError, ConnectionError) as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc

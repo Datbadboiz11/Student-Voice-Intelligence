@@ -14,6 +14,12 @@ services:
       QDRANT_COLLECTION: student_feedback
       STUDENT_VOICE_PROJECT_DIR: /app
       HF_HOME: /root/.cache/huggingface
+      LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      RAG_TOP_K: ${RAG_TOP_K:-6}
     volumes:
       - ./outputs/models:/app/outputs/models:ro
       - ./data/processed:/app/data/processed:ro
@@ -24,12 +30,22 @@ services:
       - qdrant
 
   dashboard:
+    build:
+      context: ./web
+      args:
+        NEXT_PUBLIC_API_URL: http://127.0.0.1:8000
+    ports:
+      - "8501:3000"
+    depends_on:
+      - api
+
+  streamlit:
     build: .
     command: streamlit run dashboard/app.py --server.address 0.0.0.0 --server.port 8501
     environment:
       STUDENT_VOICE_API_URL: http://api:8000
     ports:
-      - "8501:8501"
+      - "8502:8501"
     depends_on:
       - api
 

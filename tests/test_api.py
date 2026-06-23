@@ -72,10 +72,55 @@ class FakeRetrievalService:
         ][:top_k]
 
 
+class FakeRAGService:
+    def __init__(self):
+        self.received = None
+
+    def ask(self, question: str, top_k: int = 6, **_filters):
+        self.received = {"question": question, "top_k": top_k, **_filters}
+        return {
+            "question": question,
+            "answer": "Wifi phong hoc yeu va can duoc cai thien. [1]",
+            "evidence": [
+                {
+                    "rank": 1,
+                    "id": "feedback-1",
+                    "text": "Wifi phong hoc qua yeu.",
+                    "topic": "facilities",
+                    "rerank_score": 4.12,
+                }
+            ][:top_k],
+            "retrieved_count": min(top_k, 1),
+            "grounded": True,
+        }
+
+
+class FakeAnalyticsService:
+    def __init__(self):
+        self.received = None
+
+    def get_analytics(self, **filters):
+        self.received = filters
+        return {
+            "total_feedback": 2,
+            "filtered_feedback": 1 if filters.get("topic") else 2,
+            "source_distribution": [{"label": "UIT_VSFC", "count": 2, "percentage": 100.0}],
+            "sentiment_distribution": [{"label": "negative", "count": 2, "percentage": 100.0}],
+            "topic_distribution": [{"label": "facilities", "count": 2, "percentage": 100.0}],
+            "urgency_distribution": [{"label": "medium", "count": 2, "percentage": 100.0}],
+            "toxic_distribution": [{"label": 0, "count": 2, "percentage": 100.0}],
+            "negative_by_topic": [{"topic": "facilities", "count": 2}],
+            "urgency_by_topic": [{"topic": "facilities", "urgency": "medium", "count": 2}],
+            "sentiment_topic_matrix": [{"topic": "facilities", "sentiment": "negative", "count": 2}],
+        }
+
+
 def make_client(monkeypatch) -> TestClient:
     monkeypatch.setattr(api_app, "InferenceConfig", FakeInferenceConfig)
     monkeypatch.setattr(api_app, "get_inference_service", lambda: FakeInferenceService())
     monkeypatch.setattr(api_app, "get_retrieval_service", lambda: FakeRetrievalService())
+    monkeypatch.setattr(api_app, "get_rag_service", lambda: FakeRAGService())
+    monkeypatch.setattr(api_app, "get_analytics_service", lambda: FakeAnalyticsService())
     return TestClient(api_app.app)
 
 
@@ -97,6 +142,23 @@ def test_health_does_not_require_model_loading(monkeypatch):
         "toxic_baseline_exists": True,
         "urgency_baseline_exists": True,
         "project_dir": "test-project",
+    }
+
+
+def test_analytics_returns_filtered_aggregations(monkeypatch):
+    fake_analytics = FakeAnalyticsService()
+    monkeypatch.setattr(api_app, "get_analytics_service", lambda: fake_analytics)
+
+    response = TestClient(api_app.app).get("/analytics?topic=facilities&toxic=0")
+
+    assert response.status_code == 200
+    assert response.json()["filtered_feedback"] == 1
+    assert fake_analytics.received == {
+        "dataset": None,
+        "topic": "facilities",
+        "sentiment": None,
+        "urgency": None,
+        "toxic": 0,
     }
 
 
@@ -211,3 +273,43 @@ def test_search_rejects_invalid_top_k(monkeypatch):
     )
 
     assert response.status_code == 422
+
+
+def test_ask_returns_grounded_answer_and_evidence(monkeypatch):
+    response = make_client(monkeypatch).post(
+        "/ask",
+        json={"question": "Sinh vien noi gi ve wifi?", "top_k": 6, "topic": "facilities"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["grounded"] is True
+    assert body["answer"].endswith("[1]")
+    assert body["evidence"][0]["topic"] == "facilities"
+
+
+def test_ask_forwards_filters_to_rag_service(monkeypatch):
+    fake_rag = FakeRAGService()
+    monkeypatch.setattr(api_app, "get_rag_service", lambda: fake_rag)
+
+    response = TestClient(api_app.app).post(
+        "/ask",
+        json={
+            "question": "Phong hoc co van de gi?",
+            "top_k": 3,
+            "topic": "facilities",
+            "sentiment": "negative",
+            "urgency": "medium",
+            "toxic": 0,
+        },
+    )
+
+    assert response.status_code == 200
+    assert fake_rag.received == {
+        "question": "Phong hoc co van de gi?",
+        "top_k": 3,
+        "topic": "facilities",
+        "sentiment": "negative",
+        "urgency": "medium",
+        "toxic": 0,
+    }

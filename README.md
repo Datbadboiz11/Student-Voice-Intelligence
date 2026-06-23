@@ -3,7 +3,7 @@
 He thong NLP phan tich phan hoi sinh vien tieng Viet. Project ket hop data pipeline,
 PhoBERT, FastAPI va Streamlit de phan tich mot feedback hoac xu ly hang loat tu CSV.
 
-**Trang thai:** v2 da hoan thanh. Demo co the chay bang Docker API va Streamlit dashboard.
+**Trạng thái:** v2.1 + Phase 8 RAG đã sẵn sàng để demo bằng Docker API và Next.js dashboard. V3 chưa hoàn tất.
 
 ## Muc tieu
 
@@ -18,7 +18,7 @@ Project xu ly cac phan hoi dang text va du doan:
 
 ```mermaid
 flowchart LR
-    U[Nguoi dung] --> D[Streamlit dashboard]
+    U[Nguoi dung] --> D[Next.js dashboard]
     D --> A[FastAPI]
     A --> M[PhoBERT sentiment/topic]
     A --> B[Baseline toxic/urgency]
@@ -29,28 +29,25 @@ flowchart LR
 
 Dashboard ho tro:
 
+- Overview voi metric tong feedback, sentiment, urgency va toxic.
+- Data analytics voi filter, negative feedback theo topic, urgency theo topic va sentiment x topic.
 - Phan tich mot feedback va hien sentiment, topic, toxic, urgency.
 - Upload CSV co cot `text`, preview ket qua va tai CSV da du doan.
 - Kiem tra ket noi API/model ngay tren giao dien.
 - Tim feedback gan nghia qua Qdrant vector database.
+- Hoi dap dua tren feedback da truy xuat, co citation va evidence goc qua Gemini RAG.
 
 ## Quick start
 
-Can co Docker Desktop va model tai `outputs/models/`. Build va chay API:
+Can co Docker Desktop va model tai `outputs/models/`. Khoi dong full stack:
 
-```powershell
-docker build -t student-voice-api:1.0.0 .
-docker run --rm -p 8000:8000 -v "${PWD}\outputs\models:/app/outputs/models:ro" student-voice-api:1.0.0
+```bash
+docker compose up --build -d qdrant api dashboard
 ```
 
-Mo terminal thu hai va chay dashboard:
-
-```powershell
-streamlit run dashboard/app.py
-```
-
-Truy cap dashboard tai `http://localhost:8501` va Swagger API tai
-`http://127.0.0.1:8000/docs`.
+Truy cap Next.js dashboard tai `http://localhost:8501` va Swagger API tai
+`http://127.0.0.1:8000/docs`. Streamlit cu van duoc giu de doi chieu tai
+`http://localhost:8502`.
 
 ## Trang thai hien tai
 
@@ -73,11 +70,13 @@ Da hoan thanh:
 - Automated API tests bang pytest
 - Docker image cho FastAPI, mount model tu host
 - Batch prediction tu file CSV
-- Streamlit dashboard cho single feedback va CSV
+- Next.js + Tailwind dashboard cho overview, analytics, prediction, CSV, semantic search va RAG
+- Semantic search Qdrant voi Vietnamese SBERT va CrossEncoder reranking
+- Grounded RAG chatbot voi Gemini: tra loi kem feedback lam bang chung va tu choi khi khong du du lieu
 
 Dang lam tiep:
 
-- Phase 3: semantic search, RAG summary/report va dashboard analytics nang cao
+- Cac hang muc v3 con lai: topic discovery, report generation, dashboard analytics nang cao va hoan thien manual review urgency
 
 ## Cau truc thu muc
 
@@ -566,6 +565,72 @@ ung vien theo cosine similarity, sau do cross-encoder
 `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1` rerank va tra `top_k` ket qua.
 Response co `vector_score` va `rerank_score`. Qdrant chi bind cong 6333 vao
 localhost; khong expose cong nay khi deploy public.
+
+## Dashboard analytics
+
+API `GET /analytics` doc file enriched da mount vao service `api`, tong hop phan bo
+dataset, sentiment, topic, urgency, toxic va cac bang cheo. Cac filter tuy chon la
+`dataset`, `topic`, `sentiment`, `urgency` va `toxic`; dashboard goi API nay cho
+hai tab **Tong quan** va **Phan tich du lieu**.
+
+```text
+GET /analytics?topic=facilities&sentiment=negative
+```
+
+## RAG chatbot với Gemini hoặc OpenAI
+
+RAG tái sử dụng semantic retrieval + CrossEncoder reranking để lấy feedback làm
+bằng chứng trước khi gọi LLM. Prompt chỉ cho phép LLM trả lời từ evidence;
+nếu không đủ thông tin, chatbot phải trả lời `Không đủ dữ liệu để kết luận.`
+
+Tạo file `.env` local từ `.env.example` và đặt key thật vào đó. Không commit
+`.env` hoặc API key lên GitHub:
+
+```env
+GEMINI_API_KEY=your-gemini-api-key
+GEMINI_MODEL=gemini-2.0-flash
+RAG_TOP_K=6
+```
+
+Chọn Gemini:
+
+```env
+LLM_PROVIDER=gemini
+GEMINI_API_KEY=your-gemini-api-key
+GEMINI_MODEL=gemini-2.5-flash
+```
+
+Chọn OpenAI với `gpt-4o-mini`:
+
+```env
+LLM_PROVIDER=openai
+OPENAI_API_KEY=sk-your-openai-api-key
+OPENAI_MODEL=gpt-4o-mini
+```
+
+Sau khi thay đổi `.env` hoặc code RAG, recreate API và dashboard:
+
+```powershell
+docker compose up --build -d api dashboard
+```
+
+Trong dashboard, tab **RAG Chatbot** hỗ trợ các filter `topic`, `sentiment`,
+`urgency` và `toxic`. Khi hỏi về phòng học, nên chọn `topic=facilities` và
+`sentiment=negative` để context chỉ gồm feedback liên quan.
+
+```json
+POST /ask
+{
+  "question": "Sinh viên đang phàn nàn gì về Wi-Fi và phòng học?",
+  "top_k": 6,
+  "topic": "facilities",
+  "sentiment": "negative"
+}
+```
+
+Response gồm `answer`, `evidence`, `retrieved_count` và `grounded`. `evidence`
+luôn giữ feedback gốc, metadata và `rerank_score` để kiểm tra các citation trong
+câu trả lời. Với câu hỏi ngoài phạm vi dữ liệu, chatbot không được bịa thông tin.
 
 ## Kiem thu
 

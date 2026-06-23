@@ -9,6 +9,13 @@ __pycache__/
 *$py.class
 .pytest_cache/
 .pytest-tmp/
+.pytest-runtime/
+.next/
+web/node_modules/
+web/.turbo/
+web/.vercel/
+*.tsbuildinfo
+npm-debug.log*
 .mypy_cache/
 .ruff_cache/
 .coverage
@@ -60,7 +67,7 @@ outputs/figures/
 
 # Local notes and temporary assets
 note.txt
-image.png
+image*.png
 down_data.ipynb
 student_voice_predictions.csv
 
