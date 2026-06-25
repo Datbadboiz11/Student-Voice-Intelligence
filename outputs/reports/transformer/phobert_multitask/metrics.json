@@ -1,0 +1,25 @@
+{
+  "model": "PhoBERT-base-v2 multi-task",
+  "test_loss": 0.8780632355353899,
+  "sentiment_accuracy": 0.8591880560384497,
+  "sentiment_macro_f1": 0.8571483325931418,
+  "sentiment_weighted_f1": 0.859203754081548,
+  "topic_accuracy": 0.8463033029962164,
+  "topic_macro_f1": 0.707159796419521,
+  "topic_weighted_f1": 0.8432084268664453,
+  "sentiment_labels": [
+    "negative",
+    "neutral",
+    "positive"
+  ],
+  "topic_labels": [
+    "career_jobs",
+    "events_news",
+    "facilities",
+    "others",
+    "personal_social",
+    "spam",
+    "student_services",
+    "teaching_learning"
+  ]
+}

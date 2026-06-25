@@ -1,0 +1,3 @@
+model,task,accuracy,macro_f1,weighted_f1
+PhoBERT-base-v2 multi-task,sentiment,0.8591880560384497,0.8571483325931418,0.859203754081548
+PhoBERT-base-v2 multi-task,topic,0.8463033029962164,0.707159796419521,0.8432084268664453
