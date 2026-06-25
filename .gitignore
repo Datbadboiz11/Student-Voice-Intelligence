@@ -47,6 +47,7 @@ datasets/
 data/raw/
 data/external/
 data/processed/*.csv
+data/evaluation/
 
 # Model and retrieval artifacts
 outputs/models/
