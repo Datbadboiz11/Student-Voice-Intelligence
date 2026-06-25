@@ -43,6 +43,10 @@ class TopicDiscoveryService:
         frame = pd.read_csv(self.config.data_path, usecols=available)
         if "row_id" not in frame:
             frame["row_id"] = frame.index.astype(str)
+        imported = self.storage.list_admin_feedbacks(topic=topic, limit=max_items)
+        if imported:
+            imported_frame = pd.DataFrame(imported).rename(columns={"id": "row_id", "topic": "topic_group"})[["row_id", "text", "topic_group"]]
+            frame = pd.concat([frame, imported_frame], ignore_index=True)
         if topic and "topic_group" in frame:
             frame = frame[frame["topic_group"].fillna("unknown").astype(str) == topic]
         frame = frame.dropna(subset=["text"]).copy()

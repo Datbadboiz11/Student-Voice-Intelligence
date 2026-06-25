@@ -1,4 +1,4 @@
-from src.rag import OpenAIGenerator, RAGService, get_llm_generator
+from src.rag import INSUFFICIENT_ANSWER, OpenAIGenerator, RAGService, get_llm_generator
 
 
 class FakeRetriever:
@@ -48,6 +48,54 @@ def test_rag_returns_grounded_answer_with_evidence():
     assert retriever.received["topic"] == "facilities"
 
 
+def test_rag_uses_history_for_follow_up_retrieval():
+    retriever = FakeRetriever([{"id": "feedback-1", "text": "Wifi phong hoc qua yeu.", "topic": "facilities"}])
+    generator = FakeGenerator()
+
+    RAGService(retriever=retriever, generator=generator).ask(
+        "Còn vấn đề nào nữa?", history=[{"role": "user", "content": "Sinh viên phàn nàn gì về Wifi?"}]
+    )
+
+    assert "Wifi" in retriever.received["query"]
+    assert "Lịch sử hội thoại" in generator.prompt
+
+
+def test_rag_does_not_mix_unrelated_history_into_a_standalone_question():
+    retriever = FakeRetriever([{"id": "feedback-1", "text": "Wifi phong hoc qua yeu.", "topic": "facilities"}])
+    generator = FakeGenerator()
+
+    RAGService(retriever=retriever, generator=generator).ask(
+        "Sinh vien phan nan gi ve Wifi?",
+        history=[{"role": "user", "content": "Giang vien co hoa dong khong?"}],
+    )
+
+    assert retriever.received["query"] == "Sinh vien phan nan gi ve Wifi?"
+
+
+def test_rag_removes_repeated_insufficient_data_lines_when_an_answer_exists():
+    retriever = FakeRetriever([{"id": "feedback-1", "text": "Nha truong can sua wifi.", "topic": "facilities"}])
+
+    class MixedGenerator:
+        def generate(self, prompt):
+            return "- Nha truong duoc de nghi khac phuc wifi [1].\n- Khong du du lieu de ket luan.\n- Khong du du lieu de ket luan."
+
+    result = RAGService(retriever=retriever, generator=MixedGenerator()).ask("Nha truong can lam gi?")
+
+    assert result["answer"] == "- Nha truong duoc de nghi khac phuc wifi [1]."
+
+
+def test_rag_returns_one_insufficient_data_sentence_when_all_lines_are_insufficient():
+    retriever = FakeRetriever([{"id": "feedback-1", "text": "Noi dung khong lien quan.", "topic": "others"}])
+
+    class InsufficientGenerator:
+        def generate(self, prompt):
+            return "- Khong du du lieu de ket luan.\n- Khong du du lieu de ket luan."
+
+    result = RAGService(retriever=retriever, generator=InsufficientGenerator()).ask("Cau hoi")
+
+    assert result["answer"] == INSUFFICIENT_ANSWER
+
+
 def test_rag_does_not_call_generator_when_no_feedback_matches():
     retriever = FakeRetriever([])
     generator = FakeGenerator()
@@ -57,6 +105,19 @@ def test_rag_does_not_call_generator_when_no_feedback_matches():
     assert result["grounded"] is False
     assert result["evidence"] == []
     assert "Không đủ dữ liệu" in result["answer"]
+    assert generator.prompt is None
+
+
+def test_rag_refuses_evidence_without_query_anchor():
+    retriever = FakeRetriever(
+        [{"id": "feedback-1", "text": "Nhan vien phong dao tao ho tro chua tot.", "topic": "student_services"}]
+    )
+    generator = FakeGenerator()
+
+    result = RAGService(retriever=retriever, generator=generator).ask("Cang tin phuc vu the nao?")
+
+    assert result["grounded"] is False
+    assert result["evidence"] == []
     assert generator.prompt is None
 
 

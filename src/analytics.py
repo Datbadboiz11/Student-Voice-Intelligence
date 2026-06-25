@@ -98,7 +98,7 @@ class AnalyticsService:
         urgency: str | None = None,
         toxic: int | None = None,
     ) -> dict[str, Any]:
-        source = self._get_frame().copy()
+        source = pd.concat([self._get_frame().copy(), self.storage.feedback_frame()], ignore_index=True)
         reviews = self.storage.review_map()
         if reviews:
             source["urgency"] = source.apply(

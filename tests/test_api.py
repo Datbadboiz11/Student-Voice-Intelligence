@@ -71,6 +71,13 @@ class FakeRetrievalService:
             }
         ][:top_k]
 
+    def search_rankings(self, query: str, candidate_k: int = 20, **_filters):
+        rows = self.search(query, top_k=candidate_k)
+        return {
+            "vector_results": [{**row, "vector_rank": index} for index, row in enumerate(rows, start=1)],
+            "reranked_results": [{**row, "rerank_rank": index} for index, row in enumerate(rows, start=1)],
+        }
+
 
 class FakeRAGService:
     def __init__(self):
@@ -92,6 +99,33 @@ class FakeRAGService:
             ][:top_k],
             "retrieved_count": min(top_k, 1),
             "grounded": True,
+        }
+
+
+class FakeChatService:
+    def __init__(self):
+        self.sessions = {1: {"id": 1, "title": "Wifi", "created_at": "2026-01-01", "updated_at": "2026-01-01"}}
+
+    def list_sessions(self, _limit):
+        return list(self.sessions.values())
+
+    def create_session(self, title):
+        return {"id": 2, "title": title or "Cuoc tro chuyen moi", "created_at": "2026-01-01", "updated_at": "2026-01-01"}
+
+    def get_session(self, session_id):
+        session = self.sessions.get(session_id)
+        return {**session, "messages": []} if session else None
+
+    def delete_session(self, session_id):
+        return self.sessions.pop(session_id, None) is not None
+
+    def ask(self, session_id, question, **_filters):
+        if session_id not in self.sessions:
+            return None
+        return {
+            "session": self.sessions[session_id],
+            "user_message": {"role": "user", "content": question},
+            "assistant_message": {"role": "assistant", "content": "Tra loi [1]", "result": {"answer": "Tra loi [1]"}},
         }
 
 
@@ -121,6 +155,7 @@ def make_client(monkeypatch) -> TestClient:
     monkeypatch.setattr(api_app, "get_retrieval_service", lambda: FakeRetrievalService())
     monkeypatch.setattr(api_app, "get_rag_service", lambda: FakeRAGService())
     monkeypatch.setattr(api_app, "get_analytics_service", lambda: FakeAnalyticsService())
+    monkeypatch.setattr(api_app, "get_chat_service", lambda: FakeChatService())
     return TestClient(api_app.app)
 
 
@@ -275,6 +310,19 @@ def test_search_rejects_invalid_top_k(monkeypatch):
     assert response.status_code == 422
 
 
+def test_search_compare_returns_both_rankings(monkeypatch):
+    response = make_client(monkeypatch).post(
+        "/search/compare",
+        json={"query": "wifi phong hoc yeu", "candidate_k": 10, "topic": "facilities"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["candidate_k"] == 10
+    assert body["vector_results"][0]["vector_rank"] == 1
+    assert body["reranked_results"][0]["rerank_rank"] == 1
+
+
 def test_ask_returns_grounded_answer_and_evidence(monkeypatch):
     response = make_client(monkeypatch).post(
         "/ask",
@@ -312,4 +360,22 @@ def test_ask_forwards_filters_to_rag_service(monkeypatch):
         "sentiment": "negative",
         "urgency": "medium",
         "toxic": 0,
+        "history": [],
     }
+
+
+def test_chat_session_api_routes(monkeypatch):
+    client = make_client(monkeypatch)
+
+    listed = client.get("/chat-sessions")
+    created = client.post("/chat-sessions", json={})
+    opened = client.get("/chat-sessions/1")
+    answer = client.post("/chat-sessions/1/ask", json={"question": "Wifi yeu?"})
+    deleted = client.delete("/chat-sessions/1")
+
+    assert listed.status_code == 200
+    assert listed.json()["items"][0]["title"] == "Wifi"
+    assert created.status_code == 200
+    assert opened.status_code == 200
+    assert answer.json()["assistant_message"]["result"]["answer"] == "Tra loi [1]"
+    assert deleted.json() == {"deleted": True}

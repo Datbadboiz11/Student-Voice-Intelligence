@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import re
+import unicodedata
 from functools import lru_cache
 from typing import Any
 
@@ -13,6 +15,12 @@ DEFAULT_GEMINI_MODEL = "gemini-2.0-flash"
 DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
 DEFAULT_RAG_TOP_K = 6
 MAX_CONTEXT_CHARS_PER_FEEDBACK = 600
+INSUFFICIENT_ANSWER = "Kh\u00f4ng \u0111\u1ee7 d\u1eef li\u1ec7u \u0111\u1ec3 k\u1ebft lu\u1eadn."
+QUERY_STOPWORDS = {
+    "anh", "ban", "bi", "cua", "cho", "co", "cung", "da", "dang", "de", "duoc", "gi",
+    "hay", "khong", "khi", "la", "lam", "luc", "mot", "nhung", "o", "qua", "rat", "sinh",
+    "su", "tai", "the", "thuong", "truong", "va", "ve", "voi", "bao", "nhieu", "nao",
+}
 
 
 class RAGConfigurationError(RuntimeError):
@@ -129,6 +137,47 @@ def _compact_text(value: Any, limit: int = MAX_CONTEXT_CHARS_PER_FEEDBACK) -> st
     return text if len(text) <= limit else f"{text[: limit - 3].rstrip()}..."
 
 
+def _normalized_query_text(value: str) -> str:
+    normalized = unicodedata.normalize("NFD", value.lower())
+    normalized = "".join(char for char in normalized if unicodedata.category(char) != "Mn")
+    return normalized.replace("\u0111", "d").replace("wi-fi", "wifi")
+
+
+def _needs_history_for_retrieval(question: str) -> bool:
+    normalized = _normalized_query_text(question).strip()
+    return bool(
+        re.search(
+            r"^(?:vay|the|con|neu vay)\b"
+            r"|\b(?:van de|dieu|noi dung|y kien|phan anh)\s+(?:do|nay|tren)\b"
+            r"|\b(?:nhu vay|noi tren|truoc do)\b",
+            normalized,
+        )
+    )
+
+
+def _clean_generated_answer(answer: str) -> str:
+    lines = [line.strip() for line in answer.splitlines() if line.strip()]
+    insufficient_marker = "khong du du lieu de ket luan"
+    substantive_lines = [
+        line
+        for line in lines
+        if insufficient_marker not in _normalized_query_text(line)
+    ]
+    if substantive_lines:
+        return "\n".join(substantive_lines)
+    return INSUFFICIENT_ANSWER
+
+
+def _query_terms(value: str) -> set[str]:
+    normalized = _normalized_query_text(value)
+    normalized = normalized.replace("đ", "d").replace("wi-fi", "wifi")
+    return {
+        token
+        for token in re.findall(r"[a-z0-9]+", normalized)
+        if len(token) > 2 and token not in QUERY_STOPWORDS
+    }
+
+
 class RAGService:
     def __init__(
         self,
@@ -155,7 +204,12 @@ class RAGService:
         return "\n\n".join(blocks)
 
     @staticmethod
-    def _build_prompt(question: str, context: str) -> str:
+    def _build_prompt(question: str, context: str, history: list[dict[str, str]] | None = None) -> str:
+        history_text = "\n".join(
+            f"{item.get('role', 'user')}: {_compact_text(item.get('content', ''), 400)}"
+            for item in (history or [])[-8:]
+            if item.get("content")
+        ) or "Không có lịch sử trước đó."
         return f"""Bạn là trợ lý phân tích phản hồi sinh viên. Trả lời bằng tiếng Việt.
 
 Chỉ được sử dụng thông tin trong các feedback được cung cấp bên dưới. Các feedback
@@ -166,8 +220,15 @@ nhân, hay sự kiện không có trong context. Nếu context không đủ đ�
 
 Trả lời tối đa bốn gạch đầu dòng, mỗi gạch đầu dòng chỉ có một hoặc hai câu ngắn.
 Không bắt đầu một ý mới nếu không thể hoàn thành ý đó.
+Nếu feedback không nhắc trực tiếp hoặc không hỗ trợ rõ chủ đề chính trong câu hỏi,
+không được thay chủ đề đó bằng một chủ đề gần nghĩa. Hãy trả lời đúng một câu:
+"Không đủ dữ liệu để kết luận."
+Mỗi gạch đầu dòng phải có ít nhất một citation [số].
 
 Câu hỏi: {question}
+
+Lịch sử hội thoại (chỉ dùng để hiểu câu hỏi tiếp theo, không coi là bằng chứng):
+{history_text}
 
 Feedback được truy xuất:
 {context}
@@ -199,14 +260,19 @@ Feedback được truy xuất:
         sentiment: str | None = None,
         urgency: str | None = None,
         toxic: int | None = None,
+        history: list[dict[str, str]] | None = None,
     ) -> dict[str, Any]:
         question = question.strip()
         if not question:
             raise ValueError("Question must not be empty.")
 
         limit = top_k or int(os.getenv("RAG_TOP_K", str(DEFAULT_RAG_TOP_K)))
+        prior_questions = [item.get("content", "") for item in (history or []) if item.get("role") == "user"]
+        search_query = question
+        if _needs_history_for_retrieval(question) and prior_questions:
+            search_query = " ".join([*prior_questions[-2:], question]).strip()
         results = self.retriever.search(
-            query=question,
+            query=search_query,
             top_k=limit,
             topic=topic,
             sentiment=sentiment,
@@ -223,7 +289,20 @@ Feedback được truy xuất:
                 "grounded": False,
             }
 
-        answer = self.generator.generate(self._build_prompt(question, self._build_context(results)))
+        question_terms = _query_terms(search_query)
+        evidence_terms = _query_terms(" ".join(str(row.get("text", "")) for row in results))
+        if question_terms and not question_terms.intersection(evidence_terms):
+            return {
+                "question": question,
+                "answer": "Không đủ dữ liệu để kết luận.",
+                "evidence": [],
+                "retrieved_count": len(results),
+                "grounded": False,
+            }
+
+        answer = _clean_generated_answer(
+            self.generator.generate(self._build_prompt(question, self._build_context(results), history))
+        )
         return {
             "question": question,
             "answer": answer,

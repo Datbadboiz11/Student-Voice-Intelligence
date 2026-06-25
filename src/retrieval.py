@@ -49,7 +49,7 @@ class RetrievalConfig:
                     root / "data/processed/student_voice_enriched_reviewed.csv",
                 )
             ),
-            rerank_top_n=int(os.getenv("RERANK_TOP_N", "20")),
+            rerank_top_n=int(os.getenv("RERANK_TOP_N", "40")),
         )
 
 
@@ -122,6 +122,25 @@ class SemanticSearchService:
         urgency: str | None = None,
         toxic: int | None = None,
     ) -> list[dict[str, Any]]:
+        rankings = self.search_rankings(
+            query=query,
+            candidate_k=max(top_k, self.config.rerank_top_n),
+            topic=topic,
+            sentiment=sentiment,
+            urgency=urgency,
+            toxic=toxic,
+        )
+        return rankings["reranked_results"][:top_k]
+
+    def search_rankings(
+        self,
+        query: str,
+        candidate_k: int | None = None,
+        topic: str | None = None,
+        sentiment: str | None = None,
+        urgency: str | None = None,
+        toxic: int | None = None,
+    ) -> dict[str, list[dict[str, Any]]]:
         query = normalize_text(query)
         if not query:
             raise ValueError("Query must not be empty.")
@@ -150,7 +169,8 @@ class SemanticSearchService:
             normalize_embeddings=True,
             show_progress_bar=False,
         )[0]
-        candidate_limit = max(top_k, self.config.rerank_top_n)
+        candidate_limit = candidate_k or self.config.rerank_top_n
+        candidate_limit = max(1, candidate_limit)
         response = self._get_client().query_points(
             collection_name=self.config.collection_name,
             query=vector.tolist(),
@@ -174,11 +194,14 @@ class SemanticSearchService:
                     "urgency": payload.get("urgency_level_final"),
                 }
             )
+        vector_results = [dict(row, vector_rank=rank) for rank, row in enumerate(rows, start=1)]
         rerank_scores = self._get_reranker().score(query, [row["text"] for row in rows])
+        reranked = []
         for row, rerank_score in zip(rows, rerank_scores):
-            row["rerank_score"] = round(rerank_score, 6)
-        rows.sort(key=lambda row: row["rerank_score"], reverse=True)
-        return rows[:top_k]
+            reranked.append(dict(row, rerank_score=round(rerank_score, 6)))
+        reranked.sort(key=lambda row: row["rerank_score"], reverse=True)
+        reranked_results = [dict(row, rerank_rank=rank) for rank, row in enumerate(reranked, start=1)]
+        return {"vector_results": vector_results, "reranked_results": reranked_results}
 
     def build_index(
         self,
@@ -271,6 +294,29 @@ class SemanticSearchService:
             "indexed_rows": total,
             "embedding_model": self.config.embedding_model_name,
         }
+
+    def upsert_admin_feedback(self, record: dict[str, Any]) -> str:
+        if not self._collection_exists():
+            raise FileNotFoundError("Semantic index does not exist. Run scripts/build_vector_index.py first.")
+        from qdrant_client import models
+
+        point_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"admin-feedback|{record['id']}"))
+        vector = self._get_model().encode([record["text"]], normalize_embeddings=True, show_progress_bar=False)[0]
+        payload = {
+            "record_id": record["id"], "text": record["text"], "source_dataset": record["source_dataset"],
+            "sentiment_std_3class": record["sentiment"], "topic_group": record["topic"],
+            "is_toxic": int(record["toxic"]), "urgency_level_final": record["urgency"],
+            "location": record.get("location", ""), "status": record["status"],
+        }
+        self._get_client().upsert(self.config.collection_name, [models.PointStruct(id=point_id, vector=vector.tolist(), payload=payload)], wait=True)
+        return point_id
+
+    def delete_admin_feedback(self, feedback_id: str) -> None:
+        if not self._collection_exists():
+            return
+        from qdrant_client import models
+        point_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"admin-feedback|{feedback_id}"))
+        self._get_client().delete(self.config.collection_name, points_selector=models.PointIdsList(points=[point_id]), wait=True)
 
 
 @lru_cache(maxsize=1)

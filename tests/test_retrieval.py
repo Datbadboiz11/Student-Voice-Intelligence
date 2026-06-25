@@ -78,3 +78,8 @@ def test_build_and_search_qdrant_index(tmp_path: Path):
     assert results[0]["topic"] == "facilities"
     assert results[0]["toxic"] == 0
     assert results[0]["urgency"] == "medium"
+
+    rankings = service.search_rankings("wifi rat yeu", candidate_k=2, topic="facilities")
+    assert rankings["vector_results"][0]["vector_rank"] == 1
+    assert rankings["reranked_results"][0]["rerank_rank"] == 1
+    assert rankings["reranked_results"][0]["rerank_score"] == 1.0

@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
+
 from src.inference import find_project_dir
 
 
@@ -81,6 +83,47 @@ class AppStorage:
                     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY(run_id) REFERENCES topic_discovery_runs(id)
                 );
+
+                CREATE TABLE IF NOT EXISTS chat_sessions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS chat_messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_id INTEGER NOT NULL,
+                    role TEXT NOT NULL CHECK(role IN ('user', 'assistant')),
+                    content TEXT NOT NULL,
+                    result_json TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY(session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_chat_messages_session_id
+                ON chat_messages(session_id, id);
+
+                CREATE TABLE IF NOT EXISTS admin_feedbacks (
+                    id TEXT PRIMARY KEY,
+                    text TEXT NOT NULL,
+                    location TEXT NOT NULL DEFAULT '',
+                    source_dataset TEXT NOT NULL,
+                    content_hash TEXT NOT NULL,
+                    sentiment TEXT NOT NULL,
+                    sentiment_confidence REAL NOT NULL,
+                    topic TEXT NOT NULL,
+                    topic_confidence REAL NOT NULL,
+                    toxic INTEGER NOT NULL,
+                    urgency TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'new',
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(source_dataset, content_hash)
+                );
+                CREATE INDEX IF NOT EXISTS idx_admin_feedbacks_filters
+                ON admin_feedbacks(status, topic, sentiment, urgency);
+
                 """
             )
 
@@ -234,3 +277,123 @@ class AppStorage:
             )
             row = connection.execute("SELECT * FROM topic_clusters WHERE id = ?", (cluster_id,)).fetchone()
         return self._cluster_record(row) if row else None
+
+    @staticmethod
+    def _chat_session_record(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "title": row["title"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }
+
+    def create_chat_session(self, title: str) -> dict[str, Any]:
+        with self._connect() as connection:
+            cursor = connection.execute("INSERT INTO chat_sessions(title) VALUES (?)", (title,))
+            row = connection.execute("SELECT * FROM chat_sessions WHERE id = ?", (cursor.lastrowid,)).fetchone()
+        return self._chat_session_record(row)
+
+    def list_chat_sessions(self, limit: int = 50) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM chat_sessions ORDER BY updated_at DESC, id DESC LIMIT ?", (limit,)
+            ).fetchall()
+        return [self._chat_session_record(row) for row in rows]
+
+    def get_chat_session(self, session_id: int) -> dict[str, Any] | None:
+        with self._connect() as connection:
+            row = connection.execute("SELECT * FROM chat_sessions WHERE id = ?", (session_id,)).fetchone()
+        return self._chat_session_record(row) if row else None
+
+    def list_chat_messages(self, session_id: int) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM chat_messages WHERE session_id = ? ORDER BY id", (session_id,)
+            ).fetchall()
+        return [
+            {
+                "id": row["id"],
+                "role": row["role"],
+                "content": row["content"],
+                "result": json.loads(row["result_json"]) if row["result_json"] else None,
+                "created_at": row["created_at"],
+            }
+            for row in rows
+        ]
+
+    def save_chat_message(
+        self,
+        session_id: int,
+        role: str,
+        content: str,
+        result: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "INSERT INTO chat_messages(session_id, role, content, result_json) VALUES (?, ?, ?, ?)",
+                (session_id, role, content, json.dumps(result, ensure_ascii=False) if result else None),
+            )
+            connection.execute(
+                "UPDATE chat_sessions SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", (session_id,)
+            )
+            row = connection.execute("SELECT * FROM chat_messages WHERE id = ?", (cursor.lastrowid,)).fetchone()
+        return {
+            "id": row["id"],
+            "role": row["role"],
+            "content": row["content"],
+            "result": json.loads(row["result_json"]) if row["result_json"] else None,
+            "created_at": row["created_at"],
+        }
+
+    def update_chat_session_title(self, session_id: int, title: str) -> dict[str, Any] | None:
+        with self._connect() as connection:
+            connection.execute(
+                "UPDATE chat_sessions SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (title, session_id),
+            )
+            row = connection.execute("SELECT * FROM chat_sessions WHERE id = ?", (session_id,)).fetchone()
+        return self._chat_session_record(row) if row else None
+
+    def delete_chat_session(self, session_id: int) -> bool:
+        with self._connect() as connection:
+            connection.execute("DELETE FROM chat_messages WHERE session_id = ?", (session_id,))
+            cursor = connection.execute("DELETE FROM chat_sessions WHERE id = ?", (session_id,))
+        return cursor.rowcount > 0
+
+    def get_admin_feedback_by_hash(self, source_dataset: str, content_hash: str) -> dict[str, Any] | None:
+        with self._connect() as connection:
+            row = connection.execute("SELECT * FROM admin_feedbacks WHERE source_dataset = ? AND content_hash = ?", (source_dataset, content_hash)).fetchone()
+        return dict(row) if row else None
+
+    def save_admin_feedback(self, record: dict[str, Any]) -> dict[str, Any]:
+        fields = ("id", "text", "location", "source_dataset", "content_hash", "sentiment", "sentiment_confidence", "topic", "topic_confidence", "toxic", "urgency", "status")
+        with self._connect() as connection:
+            connection.execute(f"INSERT INTO admin_feedbacks({', '.join(fields)}) VALUES ({', '.join('?' for _ in fields)})", tuple(record[field] for field in fields))
+            row = connection.execute("SELECT * FROM admin_feedbacks WHERE id = ?", (record["id"],)).fetchone()
+        return dict(row)
+
+    def list_admin_feedbacks(self, status: str | None = None, topic: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
+        clauses, values = [], []
+        if status: clauses.append("status = ?"); values.append(status)
+        if topic: clauses.append("topic = ?"); values.append(topic)
+        sql = "SELECT * FROM admin_feedbacks" + (" WHERE " + " AND ".join(clauses) if clauses else "") + " ORDER BY created_at DESC, id DESC LIMIT ?"
+        with self._connect() as connection:
+            rows = connection.execute(sql, (*values, limit)).fetchall()
+        return [dict(row) for row in rows]
+
+    def feedback_frame(self) -> pd.DataFrame:
+        rows = self.list_admin_feedbacks(limit=100_000)
+        if not rows:
+            return pd.DataFrame(columns=["row_id", "dataset", "sentiment", "topic", "urgency", "toxic"])
+        return pd.DataFrame(rows).rename(columns={"id": "row_id", "source_dataset": "dataset"})[["row_id", "dataset", "sentiment", "topic", "urgency", "toxic"]]
+
+    def update_admin_feedback_status(self, feedback_id: str, status: str) -> dict[str, Any] | None:
+        with self._connect() as connection:
+            connection.execute("UPDATE admin_feedbacks SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (status, feedback_id))
+            row = connection.execute("SELECT * FROM admin_feedbacks WHERE id = ?", (feedback_id,)).fetchone()
+        return dict(row) if row else None
+
+    def delete_admin_feedback(self, feedback_id: str) -> bool:
+        with self._connect() as connection:
+            cursor = connection.execute("DELETE FROM admin_feedbacks WHERE id = ?", (feedback_id,))
+        return cursor.rowcount > 0

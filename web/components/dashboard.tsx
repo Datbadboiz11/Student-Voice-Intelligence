@@ -18,6 +18,7 @@ import {
   Send,
   ShieldAlert,
   Sparkles,
+  Trash2,
   Upload,
   Wifi
 } from "lucide-react";
@@ -57,6 +58,10 @@ type RAGResult = {
   retrieved_count: number;
   evidence: Array<SearchResult & { rank: number; source_dataset?: string }>;
 };
+type ChatMessage = { role: "user" | "assistant"; content: string; result?: RAGResult | null };
+type ChatSession = { id: number; title: string; created_at: string; updated_at: string };
+type ChatSessionDetail = ChatSession & { messages: ChatMessage[] };
+type ChatAskResponse = { session: ChatSession; user_message: ChatMessage; assistant_message: ChatMessage };
 type Prediction = {
   sentiment: string;
   sentiment_confidence: number;
@@ -188,7 +193,7 @@ export function Dashboard() {
           {view === "predict" && <PredictionView />}
           {view === "csv" && <CsvView />}
           {view === "search" && <SearchView />}
-          {view === "rag" && <RagView />}
+          {view === "rag" && <RagSessionView />}
           {view === "review" && <ReviewWorkbench />}
           {view === "reports" && <ReportWorkbench />}
           {view === "discovery" && <TopicDiscoveryWorkbench />}
@@ -304,6 +309,124 @@ function SearchView() {
   const [query, setQuery] = useState(""); const [topic, setTopic] = useState(""); const [results, setResults] = useState<SearchResult[]>([]); const [error, setError] = useState<string | null>(null); const [loading, setLoading] = useState(false);
   const submit = async (event: FormEvent) => { event.preventDefault(); if (!query.trim()) return setError("Hãy nhập câu tìm kiếm."); setLoading(true); setError(null); try { const body = await apiRequest<{ results: SearchResult[] }>("/search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query, top_k: 6, ...(topic ? { topic } : {}) }) }); setResults(body.results); } catch (reason) { setError(reason instanceof Error ? reason.message : "Không thể tìm kiếm."); } finally { setLoading(false); } };
   return <div className="space-y-6"><Panel title="Semantic Search" subtitle="Tìm feedback liên quan bằng embedding, Qdrant và CrossEncoder reranking"><form onSubmit={submit} className="grid gap-3 md:grid-cols-[1fr_220px_auto]"><input value={query} onChange={(event) => setQuery(event.target.value)} className="rounded-xl border border-slate-200 px-4 py-3 outline-none focus:border-blue-500" placeholder="Ví dụ: Wi-Fi phòng học quá yếu" /><Select value={topic} onChange={setTopic} label="" options={["", ...TOPICS]} /><button className="rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-700">{loading ? "Đang tìm..." : "Tìm kiếm"}</button></form>{error && <ErrorNotice message={error} />}</Panel><ResultList results={results} /></div>;
+}
+
+function RagSessionView() {
+  const [question, setQuestion] = useState("");
+  const [topic, setTopic] = useState("");
+  const [sentiment, setSentiment] = useState("");
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const loadSessions = async () => {
+    const response = await apiRequest<{ items: ChatSession[] }>("/chat-sessions");
+    setSessions(response.items);
+  };
+
+  useEffect(() => {
+    loadSessions().catch((reason) => setError(reason instanceof Error ? reason.message : "Không thể tải lịch sử chat."));
+  }, []);
+
+  const createSession = async () => {
+    const session = await apiRequest<ChatSession>("/chat-sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    setActiveSessionId(session.id);
+    setMessages([]);
+    setError(null);
+    await loadSessions();
+    return session.id;
+  };
+
+  const openSession = async (sessionId: number) => {
+    try {
+      setLoading(true);
+      setError(null);
+      const session = await apiRequest<ChatSessionDetail>(`/chat-sessions/${sessionId}`);
+      setActiveSessionId(session.id);
+      setMessages(session.messages);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Không thể mở phiên trò chuyện.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const deleteSession = async (sessionId: number) => {
+    if (!window.confirm("Xóa phiên trò chuyện này?")) return;
+    try {
+      await apiRequest<{ deleted: boolean }>(`/chat-sessions/${sessionId}`, { method: "DELETE" });
+      if (activeSessionId === sessionId) {
+        setActiveSessionId(null);
+        setMessages([]);
+      }
+      await loadSessions();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Không thể xóa phiên trò chuyện.");
+    }
+  };
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    const text = question.trim();
+    if (!text) return setError("Hãy nhập câu hỏi.");
+    setLoading(true);
+    setError(null);
+    try {
+      const sessionId = activeSessionId || await createSession();
+      setMessages((items) => [...items, { role: "user", content: text }]);
+      setQuestion("");
+      const response = await apiRequest<ChatAskResponse>(`/chat-sessions/${sessionId}/ask`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: text, top_k: 6, ...(topic ? { topic } : {}), ...(sentiment ? { sentiment } : {}) }),
+      });
+      setMessages((items) => [...items, response.assistant_message]);
+      await loadSessions();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Không thể tạo câu trả lời.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return <div className="grid gap-6 xl:grid-cols-[260px_.9fr_1.1fr]">
+    <Panel title="Phiên trò chuyện" subtitle="Lịch sử được lưu trong SQLite">
+      <button type="button" onClick={() => { createSession().catch((reason) => setError(reason instanceof Error ? reason.message : "Không thể tạo phiên mới.")); }} className="mb-4 w-full rounded-xl bg-[#315de0] px-3 py-2.5 text-sm font-semibold text-white hover:bg-[#2549ba]">+ Phiên mới</button>
+      <div className="max-h-[520px] space-y-2 overflow-y-auto pr-1">
+        {sessions.length ? sessions.map((session) => <div key={session.id} className={`group flex items-center gap-2 border p-2 ${activeSessionId === session.id ? "border-[#315de0] bg-blue-50" : "border-[#ded7cd] hover:bg-[#faf8f2]"}`}>
+          <button type="button" onClick={() => { openSession(session.id); }} className="min-w-0 flex-1 text-left">
+            <p className="truncate text-sm font-semibold text-slate-700">{session.title}</p>
+            <p className="mt-1 text-xs text-slate-400">{new Date(`${session.updated_at}Z`).toLocaleDateString("vi-VN")}</p>
+          </button>
+          <button type="button" onClick={() => { deleteSession(session.id); }} aria-label={`Xóa ${session.title}`} className="p-1 text-slate-300 hover:text-rose-600"><Trash2 size={15} /></button>
+        </div>) : <p className="px-1 text-sm leading-6 text-slate-500">Chưa có phiên nào được lưu.</p>}
+      </div>
+    </Panel>
+    <Panel title="RAG Chatbot" subtitle={activeSessionId ? "Đang hỏi trong phiên hiện tại" : "Tạo phiên khi gửi câu hỏi đầu tiên"}>
+      <form onSubmit={submit} className="space-y-4">
+        <textarea value={question} onChange={(event) => setQuestion(event.target.value)} className="min-h-40 w-full rounded-xl border border-slate-200 bg-slate-50 p-4 outline-none focus:border-blue-500" placeholder="Hỏi tiếp, ví dụ: Vậy vấn đề đó xuất hiện ở những phòng nào?" />
+        <div className="grid gap-3 sm:grid-cols-2"><Select value={topic} onChange={setTopic} label="Chủ đề" options={["", ...TOPICS]} /><Select value={sentiment} onChange={setSentiment} label="Sentiment" options={["", ...SENTIMENTS]} /></div>
+        <button className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-700" disabled={loading}><Send size={16} />{loading ? "Đang tổng hợp..." : "Gửi câu hỏi"}</button>
+        {error && <ErrorNotice message={error} />}
+      </form>
+    </Panel>
+    <Panel title="Cuộc trò chuyện" subtitle="Mỗi câu trả lời có evidence riêng">
+      {messages.length ? <div className="space-y-4">
+        {messages.map((message, index) => <div key={index} className={message.role === "user" ? "ml-8 border-l-2 border-[#315de0] bg-blue-50 p-4" : "mr-4 border border-[#d9d1c4] bg-[#fffefa] p-4"}>
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{message.role === "user" ? "Bạn" : "Student Voice"}</p>
+          <p className="whitespace-pre-wrap text-sm leading-7 text-slate-700">{message.content}</p>
+          {message.result && <details className="mt-3"><summary className="cursor-pointer text-xs font-semibold text-[#315de0]">{message.result.retrieved_count} feedback làm bằng chứng</summary><div className="mt-3 space-y-2">{message.result.evidence.map((row) => <article key={`${index}-${row.id}-${row.rank}`} className="border border-slate-200 p-3 text-sm"><div className="mb-2 flex flex-wrap gap-2"><Badge text={`#${row.rank}`} tone="blue" /><Badge text={row.topic || "unknown"} tone="slate" />{typeof row.rerank_score === "number" && <Badge text={`rerank ${row.rerank_score.toFixed(3)}`} tone="teal" />}</div><p className="text-slate-600">{row.text}</p></article>)}</div></details>}
+        </div>)}
+        {loading && <div className="text-sm text-slate-500"><LoaderCircle className="mr-2 inline animate-spin" size={16} />Đang tìm evidence và tổng hợp...</div>}
+      </div> : <Empty text="Tạo phiên mới hoặc chọn một phiên cũ để tiếp tục trò chuyện." />}
+    </Panel>
+  </div>;
 }
 
 function RagView() {
