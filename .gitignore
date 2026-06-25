@@ -66,12 +66,17 @@ qdrant_storage/
 # Large/generated experiment artifacts
 outputs/figures/
 outputs/reports/rag_evaluation.csv
+outputs/reports/evaluation/
+outputs/reports/transformer/sentiment_model_comparison.csv
+outputs/reports/transformer/sentiment_model_comparison.md
 
 # Local notes and temporary assets
 note.txt
 image*.png
 down_data.ipynb
+feedback.csv
 student_voice_predictions.csv
+PLAN.md
 
 # Streamlit local secrets
 .streamlit/secrets.toml
@@ -80,3 +85,7 @@ student_voice_predictions.csv
 .tmp-compose-*
 *.sqlite
 *.sqlite3
+
+# Local agent/tooling metadata
+.agents/
+skills-lock.json
